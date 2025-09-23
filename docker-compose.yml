@@ -1,0 +1,151 @@
+version: "3.8"
+services:
+
+  # -----------------------
+  # Bitwarden Unified
+  # -----------------------
+  bitwarden-unified:
+    image: ghcr.io/bitwarden/self-host:beta
+    container_name: bitwarden_unified
+    env_file:
+      - ./settings.env
+    volumes:
+      - ./bwdata:/etc/bitwarden       # persistent unified data and certificates (inside /etc/bitwarden)
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    networks:
+      - internal
+    # Note: unified listens on 8080 (HTTP) and 8443 (HTTPS) inside the container.
+    # We'll front it with Caddy (reverse proxy on host 80/443).
+
+  # -----------------------
+  # MariaDB (Bitwarden DB)
+  # -----------------------
+  db:
+    image: mariadb:10.11
+    container_name: bitwarden_db
+    environment:
+      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD}"
+      MARIADB_DATABASE: "${MARIADB_DATABASE:-bitwarden_vault}"
+      MARIADB_USER: "${MARIADB_USER:-bitwarden}"
+      MARIADB_PASSWORD: "${MARIADB_PASSWORD}"
+      MARIADB_INITDB_SKIP_TZINFO: "true"
+    volumes:
+      - db_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # -----------------------
+  # Redis (optional, used for caching / push; recommended)
+  # -----------------------
+  redis:
+    image: redis:7-alpine
+    container_name: bitwarden_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # -----------------------
+  # Caddy (reverse proxy, automatic TLS) - from original layout
+  # -----------------------
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+      - ./bwdata:/var/www/bitwarden   # optional static mount
+    restart: unless-stopped
+    networks:
+      - internal
+      - web
+
+  # -----------------------
+  # ddclient (dynamic DNS) - from original repo
+  # -----------------------
+  ddclient:
+    image: linuxserver/ddclient
+    container_name: ddclient
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./ddclient:/config
+    restart: unless-stopped
+    networks:
+      - web
+
+  # -----------------------
+  # fail2ban (monitor logs / block brute force)
+  # -----------------------
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: fail2ban
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./fail2ban/data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=${TZ:-UTC}
+      # Example SMTP envs used by the original repo - the backup/emailing and failure alerts can use these.
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM=${SMTP_FROM}
+      - SMTP_TO=${SMTP_TO}
+    restart: unless-stopped
+    networks:
+      - web
+      - internal
+
+  # -----------------------
+  # backup: scheduled encrypted backup and optional email (reuse style from original repo)
+  # This is a simple container that runs a cron or sleep+loop script to:
+  #   - run Bitwarden export or dump (db dump + attachments)
+  #   - encrypt it with GPG (recipient or passphrase)
+  #   - copy locally to ./backups and optionally send via SMTP (or rclone)
+  #
+  # You can later replace this with the original repo's backup image/scripts - this service is a placeholder
+  # matching the layout in dadatuputi/bitwarden_gcloud (keeps backup local and can email an encrypted backup).
+  # -----------------------
+  backup:
+    image: ghcr.io/bitwarden/self-host-backup-placeholder:latest
+    # NOTE: The above is a placeholder tag. If you want to reuse dadatuputi's backup image, build it locally
+    # from that repo and point image: to your local image name (or replace with johnlindahl/bitwarden-backup, ttinya, etc).
+    container_name: bitwarden_backup
+    depends_on:
+      - db
+      - bitwarden-unified
+    env_file:
+      - ./settings.env
+    volumes:
+      - ./backups:/backups
+      - ./bwdata:/etc/bitwarden:ro
+      - ./scripts/backup:/opt/backup:ro
+    restart: unless-stopped
+    networks:
+      - internal
+
+volumes:
+  db_data:
+  redis_data:
+  bwdata:
+
+networks:
+  web:
+    external: false
+  internal:
+    driver: bridge
