@@ -90,7 +90,7 @@ services:
       - ./fail2ban/data:/data
       - ./fail2ban/jail.local:/etc/fail2ban/jail.local:ro
       - ./fail2ban/filter.d:/etc/fail2ban/filter.d:ro
-      - ./caddy_logs:/var/log/caddy:ro
+      - ./bwdata/logs:/etc/bitwarden/logs:ro
     network_mode: "host"
 
   backup:
