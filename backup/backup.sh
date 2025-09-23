@@ -9,31 +9,31 @@ ENCRYPTED=$ARCHIVE.gpg
 
 mkdir -p "$TMP_DIR"
 
-# 1. Dump MariaDB
+# Dump MariaDB
 mysqldump -h db -u${MARIADB_USER} -p${MARIADB_PASSWORD} ${MARIADB_DATABASE} > $TMP_DIR/db.sql
 
-# 2. Copy Bitwarden data (configs, attachments, keys)
+# Backup Bitwarden data
 tar -C /etc/bitwarden -cf $TMP_DIR/bwdata.tar .
 
-# 3. Package all
+# Package
 tar -czf "$ARCHIVE" -C "$TMP_DIR" .
 
-# 4. Encrypt
+# Encrypt
 if [ -n "${BACKUP_GPG_RECIPIENT:-}" ]; then
     gpg --batch --yes --encrypt --recipient "$BACKUP_GPG_RECIPIENT" -o "$ENCRYPTED" "$ARCHIVE"
 elif [ -n "${BACKUP_PASSPHRASE:-}" ]; then
     gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" --symmetric -o "$ENCRYPTED" "$ARCHIVE"
 else
-    echo "No GPG recipient or passphrase provided, skipping encryption!"
+    echo "⚠️ No GPG recipient or passphrase provided, skipping encryption!"
     ENCRYPTED=$ARCHIVE
 fi
 
-# 5. Cleanup temp + unencrypted archive
+# Cleanup
 rm -rf "$TMP_DIR" "$ARCHIVE"
 
-# 6. Email if SMTP configured
+# Email if SMTP configured
 if [ -n "${SMTP_TO:-}" ]; then
     echo "Bitwarden backup $DATE attached" | mailx -s "Bitwarden Backup $DATE" -a "$ENCRYPTED" "$SMTP_TO"
 fi
 
-echo "Backup completed: $ENCRYPTED"
+echo "✅ Backup completed: $ENCRYPTED"
