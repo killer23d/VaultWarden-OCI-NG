@@ -122,9 +122,7 @@ services:
   # matching the layout in dadatuputi/bitwarden_gcloud (keeps backup local and can email an encrypted backup).
   # -----------------------
   backup:
-    image: ghcr.io/bitwarden/self-host-backup-placeholder:latest
-    # NOTE: The above is a placeholder tag. If you want to reuse dadatuputi's backup image, build it locally
-    # from that repo and point image: to your local image name (or replace with johnlindahl/bitwarden-backup, ttinya, etc).
+    build: ./backup
     container_name: bitwarden_backup
     depends_on:
       - db
@@ -134,7 +132,6 @@ services:
     volumes:
       - ./backups:/backups
       - ./bwdata:/etc/bitwarden:ro
-      - ./scripts/backup:/opt/backup:ro
     restart: unless-stopped
     networks:
       - internal
