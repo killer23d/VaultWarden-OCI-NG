@@ -10,10 +10,14 @@ RUN apt-get update && apt-get install -y \
     cron \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /opt/backup
+WORKDIR /home/ubuntu/backup
 
-COPY backup.sh /opt/backup/backup.sh
-RUN chmod +x /opt/backup/backup.sh
+COPY backup.sh /home/ubuntu/backup/backup.sh
+COPY restore.sh /home/ubuntu/backup/restore.sh
+COPY crontab /etc/cron.d/backup-cron
 
-# Run cron by default
+RUN chmod +x /home/ubuntu/backup/backup.sh /home/ubuntu/backup/restore.sh && \
+    chmod 0644 /etc/cron.d/backup-cron && \
+    crontab /etc/cron.d/backup-cron
+
 CMD ["cron", "-f"]
