@@ -44,7 +44,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
       - ./caddy_data:/data
       - ./caddy_config:/config
     networks:
@@ -55,8 +55,8 @@ services:
     image: ghcr.io/ddclient/ddclient:latest
     container_name: ddclient
     restart: unless-stopped
-    env_file:
-      - ./settings.env
+    volumes:
+      - ./ddclient/ddclient.conf:/etc/ddclient/ddclient.conf:ro
     networks:
       - web
 
@@ -66,6 +66,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./fail2ban/data:/data
+      - ./fail2ban/jail.local:/etc/fail2ban/jail.local:ro
       - /var/log:/var/log:ro
     network_mode: "host"
 
