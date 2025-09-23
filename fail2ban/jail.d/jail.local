@@ -3,23 +3,18 @@ bantime = 6h
 findtime = 6h
 maxretry = 5
 
-# Email Alert Configuration:
-# 1. Uncomment the smtp.py lines below - keep the exact spacing before 'smtp.py'
-# 2. Set 'sender' to match SMTP_FROM in your .env file
-# 3. Update 'dest' to your notification email
-
 [bitwarden]
 enabled = true
-port = 80,443,8081
+port = 80,443
 filter = bitwarden
-logpath = /bitwarden/bitwarden.log
-action = iptables-allports[name=bitwarden, chain=FORWARD]
-#         smtp.py[host=localhost:2500, sendername=Fail2Ban, sender=noreply@mail.com, dest=you@mail.com]
+logpath = /var/log/caddy/*.log
+action = iptables-allports[name=bitwarden, chain=INPUT]
+         smtp.py[host=smtp.mailersend.net:587, sendername=Fail2Ban, sender=no-reply@your.domain.com, dest=admin@your.domain.com]
 
 [bitwarden-admin]
 enabled = true
 port = 80,443
 filter = bitwarden-admin
-logpath = /bitwarden/bitwarden.log
-action = iptables-allports[name=bitwarden, chain=FORWARD]
-#         smtp.py[host=localhost:2500, sendername=Fail2Ban, sender=noreply@mail.com, dest=you@mail.com]
+logpath = /var/log/caddy/*.log
+action = iptables-allports[name=bitwarden, chain=INPUT]
+         smtp.py[host=smtp.mailersend.net:587, sendername=Fail2Ban, sender=no-reply@your.domain.com, dest=admin@your.domain.com]
