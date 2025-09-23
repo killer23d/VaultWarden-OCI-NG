@@ -1,6 +1,5 @@
-#!/bin/bash
-set -euo pipefail
-
+#!/bin/sh
+set -e
 DATE=$(date +'%Y%m%d-%H%M%S')
 BACKUP_DIR=/backups
 TMP_DIR=/tmp/bitwarden_backup_$DATE
@@ -9,31 +8,26 @@ ENCRYPTED=$ARCHIVE.gpg
 
 mkdir -p "$TMP_DIR"
 
-# Dump MariaDB
-mysqldump -h db -u${MARIADB_USER} -p${MARIADB_PASSWORD} ${MARIADB_DATABASE} > $TMP_DIR/db.sql
-
-# Backup Bitwarden data
-tar -C /etc/bitwarden -cf $TMP_DIR/bwdata.tar .
-
-# Package
+mysqldump -h db -u "$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" > "$TMP_DIR/db.sql"
+tar -C /etc/bitwarden -cf "$TMP_DIR/bwdata.tar" .
 tar -czf "$ARCHIVE" -C "$TMP_DIR" .
 
-# Encrypt
 if [ -n "${BACKUP_GPG_RECIPIENT:-}" ]; then
     gpg --batch --yes --encrypt --recipient "$BACKUP_GPG_RECIPIENT" -o "$ENCRYPTED" "$ARCHIVE"
 elif [ -n "${BACKUP_PASSPHRASE:-}" ]; then
     gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" --symmetric -o "$ENCRYPTED" "$ARCHIVE"
 else
-    echo "⚠️ No GPG recipient or passphrase provided, skipping encryption!"
+    echo "⚠️ No GPG recipient or passphrase provided, skipping encryption!" >&2
     ENCRYPTED=$ARCHIVE
 fi
 
-# Cleanup
+aws s3 cp "$ENCRYPTED" s3://bitwarden-backups/
+find "$BACKUP_DIR" -name "*.gpg" -mtime +7 -delete
+
 rm -rf "$TMP_DIR" "$ARCHIVE"
 
-# Email if SMTP configured
 if [ -n "${SMTP_TO:-}" ]; then
-    echo "Bitwarden backup $DATE attached" | mailx -s "Bitwarden Backup $DATE" -a "$ENCRYPTED" "$SMTP_TO"
+    echo "Bitwarden backup $DATE completed" | mailx -s "Bitwarden Backup $DATE" "$SMTP_TO"
 fi
 
-echo "✅ Backup completed: $ENCRYPTED"
+echo "✅ Backup completed: $ENCRYPTED" >> /var/log/backup.log
