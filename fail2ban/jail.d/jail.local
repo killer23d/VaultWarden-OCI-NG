@@ -7,7 +7,7 @@ maxretry = 5
 enabled = true
 port = 80,443
 filter = bitwarden
-logpath = /var/log/caddy/*.log
+logpath = /etc/bitwarden/logs/*.log
 action = iptables-allports[name=bitwarden, chain=INPUT]
          smtp.py[host=smtp.mailersend.net:587, sendername=Fail2Ban, sender=no-reply@your.domain.com, dest=admin@your.domain.com]
 
@@ -15,6 +15,6 @@ action = iptables-allports[name=bitwarden, chain=INPUT]
 enabled = true
 port = 80,443
 filter = bitwarden-admin
-logpath = /var/log/caddy/*.log
+logpath = /etc/bitwarden/logs/*.log
 action = iptables-allports[name=bitwarden, chain=INPUT]
          smtp.py[host=smtp.mailersend.net:587, sendername=Fail2Ban, sender=no-reply@your.domain.com, dest=admin@your.domain.com]
