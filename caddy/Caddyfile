@@ -1,0 +1,4 @@
+YOUR_DOMAIN {
+    reverse_proxy bitwarden_unified:8080
+    tls you@your.email   # or remove to use automatic ACME default; ensure email is valid
+}
