@@ -3,24 +3,18 @@
     output stderr
     level INFO
   }
-
-  # For Cloudflare proxy with Origin CA
-  # tls /etc/caddy/cert.pem /etc/caddy/key.pem
   tls {$CADDY_EMAIL}
-
   encode zstd gzip
-
   header / {
     Strict-Transport-Security "max-age=31536000;"
     X-XSS-Protection "0"
-    X-Frame-Options "SAMEORIGIN" # Changed for FIDO2 WebAuthn
+    X-Frame-Options "SAMEORIGIN"
     X-Robots-Tag "noindex, nofollow"
     X-Content-Type-Options "nosniff"
     -Server
     -X-Powered-By
     -Last-Modified
   }
-
   reverse_proxy bitwarden:8080 {
     header_up X-Real-IP {remote_host}
   }
