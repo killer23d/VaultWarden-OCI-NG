@@ -7,7 +7,7 @@ services:
     env_file:
       - ./settings.env
     volumes:
-      - ./mariadb:/var/lib/mysql
+      - ./data/mariadb:/var/lib/mysql
     networks:
       - internal
     healthcheck:
@@ -23,7 +23,7 @@ services:
     env_file:
       - ./settings.env
     volumes:
-      - ./redis:/data
+      - ./data/redis:/data
     networks:
       - internal
     healthcheck:
@@ -41,7 +41,7 @@ services:
       - db
       - redis
     volumes:
-      - ./bwdata:/etc/bitwarden
+      - ./data/bwdata:/etc/bitwarden
     networks:
       - internal
       - web
@@ -61,9 +61,9 @@ services:
       - ./settings.env
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile
-      - ./caddy_data:/data
-      - ./caddy_config:/config
-      - ./caddy_logs:/var/log/caddy
+      - ./data/caddy_data:/data
+      - ./data/caddy_config:/config
+      - ./data/caddy_logs:/var/log/caddy
       # For Cloudflare Origin CA
       # - ./caddy/cert.pem:/etc/caddy/cert.pem:ro
       # - ./caddy/key.pem:/etc/caddy/key.pem:ro
@@ -87,10 +87,10 @@ services:
     container_name: fail2ban
     restart: unless-stopped
     volumes:
-      - ./fail2ban/data:/data
+      - ./data/fail2ban:/data
       - ./fail2ban/jail.local:/etc/fail2ban/jail.local:ro
       - ./fail2ban/filter.d:/etc/fail2ban/filter.d:ro
-      - ./bwdata/logs:/etc/bitwarden/logs:ro
+      - ./data/bwdata/logs:/etc/bitwarden/logs:ro
     network_mode: "host"
 
   backup:
@@ -102,10 +102,10 @@ services:
     env_file:
       - ./settings.env
     volumes:
-      - ./backups:/backups
-      - ./bwdata:/etc/bitwarden:ro
+      - ./data/backups:/backups
+      - ./data/bwdata:/etc/bitwarden:ro
       - ./backup/msmtprc:/etc/msmtprc:ro
-      - ./backup_logs:/var/log
+      - ./data/backup_logs:/var/log
     restart: unless-stopped
     networks:
       - internal
