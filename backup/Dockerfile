@@ -1,5 +1,5 @@
 FROM alpine:latest
-RUN apk add --no-cache mariadb-client gnupg tar gzip msmtp bsd-mailx awscli cronie
+RUN apk add --no-cache mariadb-client gnupg tar gzip msmtp bsd-mailx cronie
 WORKDIR /backup
 COPY backup.sh /backup/backup.sh
 COPY restore.sh /backup/restore.sh
