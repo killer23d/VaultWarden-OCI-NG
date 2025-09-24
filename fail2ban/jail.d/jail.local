@@ -9,7 +9,7 @@ port = 80,443
 filter = bitwarden
 logpath = /etc/bitwarden/logs/*.log
 action = iptables-allports[name=bitwarden, chain=INPUT]
-         smtp.py[host=smtp.mailersend.net:587, sendername=Fail2Ban, sender=no-reply@your.domain.com, dest=admin@your.domain.com]
+         smtp.py[host=$SMTP_HOST:587, sendername=Fail2Ban, sender=$SMTP_FROM, dest=$FAIL2BAN_DEST] # TODO: Verify SMTP_HOST in settings.env is smtp.mailersend.net
 
 [bitwarden-admin]
 enabled = true
@@ -17,4 +17,4 @@ port = 80,443
 filter = bitwarden-admin
 logpath = /etc/bitwarden/logs/*.log
 action = iptables-allports[name=bitwarden, chain=INPUT]
-         smtp.py[host=smtp.mailersend.net:587, sendername=Fail2Ban, sender=no-reply@your.domain.com, dest=admin@your.domain.com]
+         smtp.py[host=$SMTP_HOST:587, sendername=Fail2Ban, sender=$SMTP_FROM, dest=$FAIL2BAN_DEST] # TODO: Verify SMTP_HOST in settings.env is smtp.mailersend.net
