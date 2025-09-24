@@ -21,13 +21,12 @@ else
     ENCRYPTED=$ARCHIVE
 fi
 
-aws s3 cp "$ENCRYPTED" s3://bitwarden-backups/
 find "$BACKUP_DIR" -name "*.gpg" -mtime +7 -delete
 
 rm -rf "$TMP_DIR" "$ARCHIVE"
 
 if [ -n "${SMTP_TO:-}" ]; then
-    echo "Bitwarden backup $DATE completed" | mailx -s "Bitwarden Backup $DATE" "$SMTP_TO"
+    echo "Bitwarden backup $DATE completed" | mailx -s "Bitwarden Backup $DATE" -a "$ENCRYPTED" "$SMTP_TO" || echo "⚠️ Failed to email backup!" >&2
 fi
 
 echo "✅ Backup completed: $ENCRYPTED" >> /var/log/backup.log
