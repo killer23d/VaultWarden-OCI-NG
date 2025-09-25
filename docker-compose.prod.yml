@@ -1,15 +1,14 @@
-# docker-compose.prod.yml
 version: "3.8"
 
 services:
   vaultwarden:
-    image: vaultwarden/server:1.32.6
+    image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
     env_file:
       - ./settings.env
     ports:
-      - "8080:80"             # caddy will reverse-proxy; change if you use different mapping
+      - "8080:80"
     volumes:
       - ./data/bwdata:/data:rw
     networks:
@@ -21,11 +20,11 @@ services:
       retries: 3
 
   mariadb:
-    image: mariadb:11
+    image: mariadb:latest
     container_name: bw_mariadb
     restart: unless-stopped
     env_file:
-      - ./settings.env      # should contain MYSQL_ROOT_PASSWORD / MYSQL_DATABASE / MYSQL_USER / MYSQL_PASSWORD
+      - ./settings.env
     volumes:
       - ./data/mariadb:/var/lib/mysql:rw
     environment:
@@ -34,7 +33,7 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u${MYSQL_USER} -p${MYSQL_PASSWORD} >/dev/null 2>&1 || mysqladmin ping -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} >/dev/null 2>&1 || exit 1"]
       interval: 1m30s
       timeout: 10s
       retries: 3
@@ -42,7 +41,7 @@ services:
       - bw_net
 
   redis:
-    image: redis:7
+    image: redis:latest
     container_name: bw_redis
     restart: unless-stopped
     volumes:
@@ -57,7 +56,7 @@ services:
       - bw_net
 
   caddy:
-    image: caddy:2
+    image: caddy:latest
     container_name: bw_caddy
     restart: unless-stopped
     env_file:
@@ -79,22 +78,20 @@ services:
       - bw_net
 
   fail2ban:
-    image: linuxserver/fail2ban:latest
+    image: lscr.io/linuxserver/fail2ban:latest
     container_name: bw_fail2ban
     restart: unless-stopped
     volumes:
       - ./fail2ban/jail.local:/config/jail.local:ro
-      - ./fail2ban/filter.d:/etc/fail2ban/filter.d:ro
+      - ./fail2ban/filter.d:/config/filter.d:ro
       - /var/log:/var/log:ro
       - ./data/fail2ban:/config:rw
     cap_add:
       - NET_ADMIN
-      - NET_RAW
     environment:
       - PUID=1000
       - PGID=1000
     healthcheck:
-      # fail2ban doesn't have a trivial http endpoint; check if 'fail2ban-client ping' works in the container
       test: ["CMD-SHELL", "fail2ban-client ping >/dev/null 2>&1 || exit 1"]
       interval: 2m
       timeout: 10s
@@ -103,15 +100,16 @@ services:
       - bw_net
 
   ddclient:
-    image: linuxserver/ddclient:latest
+    image: lscr.io/linuxserver/ddclient:latest
     container_name: bw_ddclient
     restart: unless-stopped
     env_file:
       - ./settings.env
     volumes:
       - ./ddclient/ddclient.conf:/config/ddclient.conf:ro
+      - ./ddclient/ddclient.log:/config/ddclient.log
     healthcheck:
-      test: ["CMD-SHELL", "grep -q 'ERROR' /config/ddclient.log 2>/dev/null && exit 1 || exit 0"]
+      test: ["CMD-SHELL", "test -f /config/ddclient.log || exit 1"]
       interval: 5m
       timeout: 10s
       retries: 2
@@ -122,8 +120,7 @@ services:
     build:
       context: ./backup
       dockerfile: Dockerfile
-      # if you prefer using a prebuilt image, change to image: myrepo/bw_backup:1.0
-    image: bitwarden_backup:arm64
+    image: bitwarden_backup:latest
     container_name: bw_backup
     env_file:
       - ./settings.env
@@ -137,7 +134,6 @@ services:
     networks:
       - bw_net
     healthcheck:
-      # backup container is run on cron; simple check: container exists and backup dir is writable
       test: ["CMD-SHELL", "test -w /backups || exit 1"]
       interval: 30m
       timeout: 10s
