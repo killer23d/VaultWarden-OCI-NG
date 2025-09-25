@@ -9,7 +9,7 @@ ENCRYPTED=$ARCHIVE.gpg
 mkdir -p "$TMP_DIR"
 
 mysqldump -h db -u "$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" > "$TMP_DIR/db.sql"
-tar -C /etc/bitwarden -cf "$TMP_DIR/bwdata.tar" .
+tar -C /data -cf "$TMP_DIR/bwdata.tar" .
 tar -czf "$ARCHIVE" -C "$TMP_DIR" .
 
 if [ -n "${BACKUP_GPG_RECIPIENT:-}" ]; then
