@@ -25,7 +25,7 @@ fi
 
 tar -xzf "$TMP_DIR/restore.tar.gz" -C "$TMP_DIR"
 mysql -h db -u "$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" < "$TMP_DIR/db.sql"
-tar -xf "$TMP_DIR/bwdata.tar" -C /etc/bitwarden
+tar -xf "$TMP_DIR/bwdata.tar" -C /data
 
 if [ -n "${SMTP_TO:-}" ]; then
     echo "Bitwarden restore $1 completed" | mailx -s "Bitwarden Restore" "$SMTP_TO"
