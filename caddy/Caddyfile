@@ -15,7 +15,8 @@
     -X-Powered-By
     -Last-Modified
   }
-  reverse_proxy bitwarden:8080 {
+  reverse_proxy /notifications/hub vaultwarden:3012
+  reverse_proxy / * vaultwarden:80 {
     header_up X-Real-IP {remote_host}
   }
 }
