@@ -1,22 +1,29 @@
-{$CADDY_DOMAIN}:443 {
-  log {
-    output stderr
-    level INFO
-  }
-  tls {$CADDY_EMAIL}
+# caddy/Caddyfile
+# expects APP_DOMAIN and ADMIN_EMAIL set in settings.env
+
+{env.APP_DOMAIN} {
   encode zstd gzip
-  header / {
-    Strict-Transport-Security "max-age=31536000;"
-    X-XSS-Protection "0"
-    X-Frame-Options "SAMEORIGIN"
-    X-Robots-Tag "noindex, nofollow"
-    X-Content-Type-Options "nosniff"
-    -Server
-    -X-Powered-By
-    -Last-Modified
+  reverse_proxy /notifications/* vaultwarden:80
+  reverse_proxy /vault/* vaultwarden:80
+  reverse_proxy /* vaultwarden:80
+
+  # simple health endpoint
+  @health {
+    path /health
   }
-  reverse_proxy /notifications/hub vaultwarden:3012
-  reverse_proxy / * vaultwarden:80 {
-    header_up X-Real-IP {remote_host}
+  handle @health {
+    respond "OK" 200
+  }
+
+  tls {env.ADMIN_EMAIL}
+  log {
+    output file /logs/access.log
+    format single_field common_log
+  }
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
   }
 }
