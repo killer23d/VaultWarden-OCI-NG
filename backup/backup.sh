@@ -1,32 +1,92 @@
-#!/bin/sh
-set -e
-DATE=$(date +'%Y%m%d-%H%M%S')
-BACKUP_DIR=/backups
-TMP_DIR=/tmp/bitwarden_backup_$DATE
-ARCHIVE=$BACKUP_DIR/bitwarden_backup_$DATE.tar.gz
-ENCRYPTED=$ARCHIVE.gpg
+#!/usr/bin/env bash
+# backup/backup.sh
+# Usage: this script expects environment variables in settings.env to be exported before running:
+#   GPG_PASSPHRASE, SMTP_USER, SMTP_PASSWORD, SMTP_HOST, SMTP_FROM, BACKUP_EMAIL_RECIPIENT, APP_DOMAIN
+#
+# Must be run as non-root (Dockerfile uses user 'backup'), and /backups must be writable by this user.
+set -euo pipefail
 
-mkdir -p "$TMP_DIR"
+LOGDIR=${LOGDIR:-/var/log/backup}
+mkdir -p "$LOGDIR"
+LOGFILE="$LOGDIR/backup.log"
+exec >> "$LOGFILE" 2>&1
 
-mysqldump -h db -u "$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" > "$TMP_DIR/db.sql"
-tar -C /data -cf "$TMP_DIR/bwdata.tar" .
-tar -czf "$ARCHIVE" -C "$TMP_DIR" .
+timestamp() { date -u +"%Y%m%dT%H%M%SZ"; }
 
-if [ -n "${BACKUP_GPG_RECIPIENT:-}" ]; then
-    gpg --batch --yes --encrypt --recipient "$BACKUP_GPG_RECIPIENT" -o "$ENCRYPTED" "$ARCHIVE"
-elif [ -n "${BACKUP_PASSPHRASE:-}" ]; then
-    gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" --symmetric -o "$ENCRYPTED" "$ARCHIVE"
-else
-    echo "⚠️ No GPG recipient or passphrase provided, skipping encryption!" >&2
-    ENCRYPTED=$ARCHIVE
-fi
+die() {
+  echo "$(timestamp) ERROR: $*" >&2
+  exit 1
+}
 
-find "$BACKUP_DIR" -name "*.gpg" -mtime +7 -delete
+info() {
+  echo "$(timestamp) INFO: $*"
+}
 
-rm -rf "$TMP_DIR" "$ARCHIVE"
+# Ensure required env vars
+: "${GPG_PASSPHRASE:?GPG_PASSPHRASE must be set (from settings.env)}"
+: "${BACKUP_EMAIL_RECIPIENT:?BACKUP_EMAIL_RECIPIENT must be set}"
+: "${SMTP_HOST:?SMTP_HOST must be set}"
+: "${SMTP_USER:?SMTP_USER must be set}"
+: "${SMTP_PASSWORD:?SMTP_PASSWORD must be set}"
+: "${SMTP_FROM:?SMTP_FROM must be set}"
 
-if [ -n "${SMTP_TO:-}" ]; then
-    echo "Bitwarden backup $DATE completed" | mailx -s "Bitwarden Backup $DATE" -a "$ENCRYPTED" "$SMTP_TO" || echo "⚠️ Failed to email backup!" >&2
-fi
+BACKUP_DIR=${BACKUP_DIR:-/backups}
+DATA_DIRS=(/data /var/lib/mysql)
+TMPDIR=$(mktemp -d -p /tmp bwbackup.XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "✅ Backup completed: $ENCRYPTED" >> /var/log/backup.log
+info "Starting backup for ${APP_DOMAIN:-(unknown)}"
+
+# Create tarball of data directories (readonly mounts expected)
+TARFILE="$TMPDIR/bitwarden_backup_$(timestamp).tar.gz"
+info "Creating tarball $TARFILE"
+tar -czf "$TARFILE" -C / --warning=no-file-changed "${DATA_DIRS[@]/#/}" || die "tar failed"
+
+# Encrypt with GPG symmetric AES256
+ENCRYPTED="$BACKUP_DIR/bitwarden_backup_$(timestamp).tar.gz.gpg"
+info "Encrypting to $ENCRYPTED"
+gpg --batch --yes --passphrase "$GPG_PASSPHRASE" --symmetric --cipher-algo AES256 -o "$ENCRYPTED" "$TARFILE" || die "gpg encryption failed"
+
+# Set safe permissions
+chmod 600 "$ENCRYPTED"
+
+# Rotate local backups: keep last 7 (configurable)
+KEEP=${KEEP:-7}
+info "Rotating backups, keeping last $KEEP"
+ls -1t "$BACKUP_DIR"/bitwarden_backup_*.tar.gz.gpg 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f --
+
+# Send notification email with minimal metadata (no attachments)
+info "Sending notification email to $BACKUP_EMAIL_RECIPIENT"
+# Prepare temporary msmtp config from template (template has placeholders)
+MSMTP_CONFIG="/tmp/msmtp.conf.$$"
+trap 'rm -f "$MSMTP_CONFIG"' EXIT
+cat > "$MSMTP_CONFIG" <<EOF
+defaults
+auth on
+tls on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile /var/log/backup/msmtp.log
+
+account default
+host ${SMTP_HOST}
+port 587
+from ${SMTP_FROM}
+user ${SMTP_USER}
+passwordeval echo ${SMTP_PASSWORD}
+
+account default : default
+EOF
+
+# Send email
+{
+  echo "From: ${SMTP_FROM}"
+  echo "To: ${BACKUP_EMAIL_RECIPIENT}"
+  echo "Subject: [Backup] Vaultwarden backup completed for ${APP_DOMAIN:-(unknown)}"
+  echo
+  echo "Backup completed successfully."
+  echo "Backup file: $(basename "$ENCRYPTED")"
+  echo "Timestamp: $(timestamp)"
+} | msmtp --file="$MSMTP_CONFIG" --logfile /var/log/backup/msmtp_run.log -- "${BACKUP_EMAIL_RECIPIENT}" || info "Warning: msmtp reported failure (email may not have been sent)"
+
+info "Backup completed successfully: $(basename "$ENCRYPTED")"
+exit 0
