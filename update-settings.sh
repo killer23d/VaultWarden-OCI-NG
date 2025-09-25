@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Check if settings.env exists
+if [ ! -f settings.env ]; then
+  echo "Error: settings.env not found!"
+  exit 1
+fi
+
 # Base64 encode settings.env
 echo -n "$(cat settings.env | base64)" > secrets.b64
 
