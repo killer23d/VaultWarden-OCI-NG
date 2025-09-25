@@ -1,19 +1,33 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# update-settings.sh
+# Usage: ./update-settings.sh <secret-name>  (reads settings.env from local cwd and uploads to OCI Vault)
+set -euo pipefail
 
-# Check if settings.env exists
-if [ ! -f settings.env ]; then
-  echo "Error: settings.env not found!"
-  exit 1
+if [ $# -lt 1 ]; then
+  echo "Usage: $0 <oci-secret-name-or-ocid>"
+  exit 2
 fi
 
-# Base64 encode settings.env
-echo -n "$(cat settings.env | base64)" > secrets.b64
+SECRET_NAME="$1"
+if [ ! -f settings.env ]; then
+  echo "settings.env not found in current directory"
+  exit 2
+fi
 
-# Update secret in OCI Vault
-oci vault secret update --secret-id <secret-ocid> --secret-content '{"content": "'$(cat secrets.b64)'"}'
+# encode to base64 inline and upload
+b64file=$(mktemp)
+trap 'rm -f "$b64file"' EXIT
+base64 -w0 settings.env > "$b64file"
 
-# Clean up
-rm secrets.b64
+# if SECRET_OCID provided, try to use it; otherwise create new secret
+if [[ "$SECRET_NAME" == ocid1.* ]]; then
+  echo "Updating existing secret OCID: $SECRET_NAME"
+  oci vault secret update --secret-id "$SECRET_NAME" --secret-content "{\"content\":\"$(cat $b64file)\"}"
+else
+  echo "Creating secret named: $SECRET_NAME"
+  # You must set COMPARTMENT_OCID env var before running
+  : "${COMPARTMENT_OCID:?Set COMPARTMENT_OCID env var to upload new secret}"
+  oci vault secret create --compartment-id "$COMPARTMENT_OCID" --secret-name "$SECRET_NAME" --secret-content "{\"content\":\"$(cat $b64file)\"}"
+fi
 
-echo "settings.env uploaded to OCI Vault."
+echo "Secret uploaded/updated successfully."
