@@ -2,7 +2,7 @@ version: "3.9"
 services:
   db:
     image: mariadb:11
-    container_name: bitwarden_db
+    container_name: vaultwarden_db
     restart: unless-stopped
     env_file:
       - ./settings.env
@@ -17,7 +17,7 @@ services:
 
   redis:
     image: redis:7
-    container_name: bitwarden_redis
+    container_name: vaultwarden_redis
     restart: unless-stopped
     command: redis-server --requirepass $REDIS_PASSWORD
     env_file:
@@ -31,9 +31,9 @@ services:
       interval: 10s
       retries: 5
 
-  bitwarden-unified:
-    image: bitwarden/self-host:latest
-    container_name: bitwarden
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
     restart: unless-stopped
     env_file:
       - ./settings.env
@@ -41,12 +41,12 @@ services:
       - db
       - redis
     volumes:
-      - ./data/bwdata:/etc/bitwarden
+      - ./data/bwdata:/data
     networks:
       - internal
       - web
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/alive"]
+      test: ["CMD", "curl", "-f", "http://localhost/alive"]
       interval: 10s
       retries: 5
 
@@ -90,20 +90,20 @@ services:
       - ./data/fail2ban:/data
       - ./fail2ban/jail.local:/etc/fail2ban/jail.local:ro
       - ./fail2ban/filter.d:/etc/fail2ban/filter.d:ro
-      - ./data/bwdata/logs:/etc/bitwarden/logs:ro
+      - ./data/bwdata/logs:/data/logs:ro
     network_mode: "host"
 
   backup:
     build: ./backup
-    container_name: bitwarden_backup
+    container_name: vaultwarden_backup
     depends_on:
       - db
-      - bitwarden-unified
+      - vaultwarden
     env_file:
       - ./settings.env
     volumes:
       - ./data/backups:/backups
-      - ./data/bwdata:/etc/bitwarden:ro
+      - ./data/bwdata:/data:ro
       - ./backup/msmtprc:/etc/msmtprc:ro
       - ./data/backup_logs:/var/log
     restart: unless-stopped
