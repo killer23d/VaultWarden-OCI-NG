@@ -1,34 +1,16 @@
-#!/bin/sh
-set -e
-if [ $# -lt 1 ]; then
-    echo "Usage: restore.sh <backup_file.gpg>" >&2
-    exit 1
-fi
+#!/usr/bin/env bash
+# backup/restore.sh
+set -euo pipefail
 
-BACKUP_FILE=$1
-TMP_DIR=/tmp/bitwarden_restore
+: "${1:?Usage: $0 /backups/bitwarden_backup_YYYYMMDD...tar.gz.gpg}"
+: "${GPG_PASSPHRASE:?GPG_PASSPHRASE must be set to restore}"
 
-mkdir -p "$TMP_DIR"
+BACKUP_FILE="$1"
+TMPDIR=$(mktemp -d /tmp/bwrestore.XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT
 
-if [[ "$BACKUP_FILE" == *.gpg ]]; then
-    if [ -n "${BACKUP_GPG_RECIPIENT:-}" ]; then
-        gpg --batch --yes --decrypt -o "$TMP_DIR/restore.tar.gz" "$BACKUP_FILE"
-    elif [ -n "${BACKUP_PASSPHRASE:-}" ]; then
-        gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" --decrypt -o "$TMP_DIR/restore.tar.gz" "$BACKUP_FILE"
-    else
-        echo "⚠️ No decryption method provided!" >&2
-        exit 1
-    fi
-else
-    cp "$BACKUP_FILE" "$TMP_DIR/restore.tar.gz"
-fi
-
-tar -xzf "$TMP_DIR/restore.tar.gz" -C "$TMP_DIR"
-mysql -h db -u "$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" < "$TMP_DIR/db.sql"
-tar -xf "$TMP_DIR/bwdata.tar" -C /data
-
-if [ -n "${SMTP_TO:-}" ]; then
-    echo "Bitwarden restore $1 completed" | mailx -s "Bitwarden Restore" "$SMTP_TO"
-fi
-
-echo "✅ Restore completed: $1" >> /var/log/backup.log
+echo "Decrypting $BACKUP_FILE ..."
+gpg --batch --yes --passphrase "$GPG_PASSPHRASE" -o "$TMPDIR"/backup.tar.gz --decrypt "$BACKUP_FILE"
+echo "Extracting ..."
+tar -xzf "$TMPDIR"/backup.tar.gz -C /  # BE SURE THIS IS RUN WHERE /data and /var/lib/mysql are intended to be restored
+echo "Restore complete. Please restart containers and verify DB and data."
