@@ -65,6 +65,7 @@ services:
       - ./data/caddy_data:/data
       - ./data/caddy_config:/config
       - ./data/caddy_logs:/logs
+      - ./caddy/cloudflare_ips.caddy:/etc/caddy/cloudflare_ips.caddy:ro
     ports:
       - "80:80"
       - "443:443"
