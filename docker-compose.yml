@@ -111,7 +111,7 @@ services:
       - ./ddclient/ddclient.conf:/config/ddclient.conf:ro
       - ./ddclient/ddclient.log:/config/ddclient.log
     healthcheck:
-      test: ["CMD-SHELL", "test -f /config/ddclient.log || exit 1"]
+      ["CMD-SHELL", "test $(find /config/ddclient.log -mmin -60) || exit 1"]
       interval: 5m
       timeout: 10s
       retries: 2
