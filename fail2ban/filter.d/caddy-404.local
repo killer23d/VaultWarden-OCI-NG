@@ -1,0 +1,4 @@
+# fail2ban/filter.d/caddy-404.local
+[Definition]
+failregex = ^<ADDR> .* "GET .* HTTP/.*" 404 .*$
+ignoreregex =
