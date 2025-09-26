@@ -29,3 +29,22 @@ filter   = vaultwarden
 port     = http,https
 logpath  = /logs/vaultwarden/vaultwarden.log # Corrected path
 maxretry = 5
+
+[sshd]
+# Protects the SSH daemon on the host machine.
+# Assumes the host's /var/log is mounted into the container.
+# NOTE: You must add a volume mount to your docker-compose.yml for this to work:
+#      - /var/log:/var/log/host:ro
+enabled   = true
+maxretry  = 5
+findtime  = 10m
+bantime   = 1h
+logpath   = /var/log/host/auth.log # Path inside the container
+
+[recidive]
+# This jail bans IPs that are repeatedly banned by other jails.
+enabled   = true
+logpath   = /config/fail2ban.log  # Fail2ban's own log file
+maxretry  = 5                     # Ban after 5 bans in other jails
+findtime  = 1d                    # within one day
+bantime   = 1w                    # Ban for one week
