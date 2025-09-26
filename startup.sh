@@ -1,6 +1,20 @@
-#!/usr/bin/env bash
+#!/usr/-bin/env bash
 # startup.sh -- secure fetch of settings.env into RAM, then start compose
 set -euo pipefail
+
+# --- New Block: Auto-update Cloudflare IPs ---
+# Check for the IP update script and run it if it exists
+CLOUDFLARE_IP_SCRIPT="./caddy/update_cloudflare_ips.sh"
+if [ -f "$CLOUDFLARE_IP_SCRIPT" ]; then
+  echo "--> Found Cloudflare IP update script. Running it now..."
+  # Make sure it's executable first
+  chmod +x "$CLOUDFLARE_IP_SCRIPT"
+  # Run the script
+  "$CLOUDFLARE_IP_SCRIPT"
+else
+  echo "--> INFO: Cloudflare IP update script not found at $CLOUDFLARE_IP_SCRIPT. Skipping."
+fi
+# --- End of New Block ---
 
 # If OCI_SECRET_OCID is set, fetch from OCI Vault, else use local settings.env
 TMPDIR=${TMPDIR:-/dev/shm/bwsettings}
