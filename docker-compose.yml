@@ -130,8 +130,9 @@ services:
       - ./data/backup_logs:/var/log/backup:rw
       - ./data/bwdata:/data:ro
       - ./data/mariadb:/var/lib/mysql:ro
-    entrypoint: ["/backup/backup.sh"]
-    restart: "no"
+    # Use cron as the entrypoint to run scheduled backups
+    entrypoint: ["/usr/sbin/cron", "-f"]
+    restart: "unless-stopped" # Keep the container running
     networks:
       - bw_net
     healthcheck:
