@@ -165,6 +165,6 @@ log_output() {
   echo "--- OCI Vault Setup Details ---" > "$log_file"
   echo "Timestamp: $(date)" >> "$log_file"
   echo "Compartment OCID: $COMPARTMENT_OCID" >> "$log_file"
-  echo "Vault OCID: $VAULT_OCID" >> "$log_file"
+  echo "Secret OCID: $SECRET_OCID" >> "$log_file"
   echo "Key OCID: $KEY_OCID" >> "$log_file"
   echo "Secret Name: $SECRET_NAME" >> "$log_file
