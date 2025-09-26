@@ -55,11 +55,11 @@ KEEP=${KEEP:-14} # <-- This value has been changed from 7 to 14
 info "Rotating backups, keeping last $KEEP"
 ls -1t "$BACKUP_DIR"/bitwarden_backup_*.tar.gz.gpg 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f --
 
-# Send notification email with minimal metadata (no attachments)
-info "Sending notification email to $BACKUP_EMAIL_RECIPIENT"
-# Prepare temporary msmtp config from template (template has placeholders)
+# --- New Email Section with Attachment ---
+info "Sending backup file via email to $BACKUP_EMAIL_RECIPIENT"
+# Prepare temporary msmtp config. Mutt will use this config file.
 MSMTP_CONFIG="/tmp/msmtp.conf.$$"
-trap 'rm -f "$MSMTP_CONFIG"' EXIT
+trap 'rm -f "$MSMTP_CONFIG"' EXIT # The existing trap will clean this up
 cat > "$MSMTP_CONFIG" <<EOF
 defaults
 auth on
@@ -70,23 +70,21 @@ logfile /var/log/backup/msmtp.log
 account default
 host ${SMTP_HOST}
 port 587
-from ${SMTP_FROM}
-user ${SMTP_USER}
-passwordeval echo ${SMTP_PASSWORD}
-
-account default : default
+from "${SMTP_FROM}"
+user "${SMTP_USER}"
+passwordeval "echo ${SMTP_PASSWORD}"
 EOF
 
-# Send email
-{
-  echo "From: ${SMTP_FROM}"
-  echo "To: ${BACKUP_EMAIL_RECIPIENT}"
-  echo "Subject: [Backup] Vaultwarden backup completed for ${APP_DOMAIN:-(unknown)}"
-  echo
-  echo "Backup completed successfully."
-  echo "Backup file: $(basename "$ENCRYPTED")"
-  echo "Timestamp: $(timestamp)"
-} | msmtp --file="$MSMTP_CONFIG" --logfile /var/log/backup/msmtp_run.log -- "${BACKUP_EMAIL_RECIPIENT}" || info "Warning: msmtp reported failure (email may not have been sent)"
+# Define email subject and body
+SUBJECT="[Backup] Vaultwarden backup for ${APP_DOMAIN:-(unknown)} on $(date -u +'%Y-%m-%d')"
+BODY="Encrypted backup file is attached.\n\nFile: $(basename "$ENCRYPTED")\nTimestamp: $(timestamp)"
+
+# Send email with mutt, using the temporary msmtp config
+# The -a flag attaches the file. The '--' signifies the end of options.
+echo -e "$BODY" | mutt -s "$SUBJECT" \
+  -F "$MSMTP_CONFIG" \
+  -a "$ENCRYPTED" \
+  -- "$BACKUP_EMAIL_RECIPIENT" || info "Warning: mutt reported a failure. Email with attachment may not have been sent."
 
 info "Backup completed successfully: $(basename "$ENCRYPTED")"
 exit 0
