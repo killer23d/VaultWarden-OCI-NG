@@ -88,6 +88,7 @@ services:
       - ./data/caddy_logs:/logs/caddy:ro # Mount Caddy logs (read-only)
       - ./data/bwdata:/logs/vaultwarden:ro # Mount Vaultwarden logs (read-only)
       - ./data/fail2ban:/config:rw
+      - /var/log:/var/log/host:ro
     cap_add:
       - NET_ADMIN
     environment:
