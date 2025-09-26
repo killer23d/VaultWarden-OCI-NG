@@ -1,4 +1,4 @@
-# fail2ban/jail.local
+# fail2ban/jail.d/jail.local
 [DEFAULT]
 ignoreip = 127.0.0.1/8 ::1
 bantime = 3600
@@ -6,17 +6,26 @@ findtime = 600
 maxretry = 5
 backend = auto
 banaction = iptables-multiport
+destemail = ${FAIL2BAN_DEST} # Set a default destination email
+action = %(action_mwl)s      # Use an action that sends mail
 
 [caddy-404]
 enabled = true
 filter = caddy-404
-action = iptables-multiport[name=caddy-404, port="http,https"]
-logpath = /var/log/caddy/access.log
+port = http,https
+logpath = /logs/caddy/access.log # Corrected path
 maxretry = 10
 
 [bitwarden-admin]
 enabled = true
 filter = bitwarden-admin
-action = iptables-multiport[name=bitwarden-admin, port="http,https"]
-logpath = /var/log/caddy/access.log
+port = http,https
+logpath = /logs/vaultwarden/vaultwarden.log # Corrected path
 maxretry = 3
+
+[vaultwarden]
+enabled  = true
+filter   = vaultwarden
+port     = http,https
+logpath  = /logs/vaultwarden/vaultwarden.log # Corrected path
+maxretry = 5
