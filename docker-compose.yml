@@ -142,9 +142,6 @@ services:
       retries: 1
 
   watchtower:
-    # Watchtower will pull down your new image, gracefully shut down your existing container
-    # and restart it with the same options that were used when it was deployed initially
-    # https://github.com/containrrr/watchtower
     image: containrrr/watchtower
     restart: always
     container_name: watchtower
@@ -152,10 +149,10 @@ services:
       - vaultwarden # Corrected service name
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    environment:
+     environment:
       - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_SCHEDULE
-      - TZ
+      - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE}
+      - TZ=${TZ}
 
 networks:
   bw_net:
