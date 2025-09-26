@@ -11,17 +11,18 @@
 {env.APP_DOMAIN} {
     encode zstd gzip
 
-    # Handle specific paths first
+    # Handle health checks first
+    handle /health {
+        respond "OK" 200
+    }
+
+    # Handle specific application paths
     handle /notifications/* {
         reverse_proxy vaultwarden:80
     }
     
     handle /vault/* {
         reverse_proxy vaultwarden:80
-    }
-
-    handle /health {
-        respond "OK" 200
     }
 
     # Handle all other traffic last
@@ -34,9 +35,11 @@
         output file /logs/access.log
         format single_field common_log
     }
-    header {
+ 
+   header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
         Referrer-Policy "strict-origin-when-cross-origin"
     }
+}
