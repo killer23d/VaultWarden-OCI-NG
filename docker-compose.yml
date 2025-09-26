@@ -140,6 +140,23 @@ services:
       timeout: 10s
       retries: 1
 
+  watchtower:
+    # Watchtower will pull down your new image, gracefully shut down your existing container
+    # and restart it with the same options that were used when it was deployed initially
+    # https://github.com/containrrr/watchtower
+    image: containrrr/watchtower
+    restart: always
+    container_name: watchtower
+    <<: *default-logging
+    depends_on:
+    - bitwarden
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+    - WATCHTOWER_CLEANUP=true
+    - WATCHTOWER_SCHEDULE
+    - TZ
+
 networks:
   bw_net:
     driver: bridge
