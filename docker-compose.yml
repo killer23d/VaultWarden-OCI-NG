@@ -7,8 +7,6 @@ services:
     restart: unless-stopped
     env_file:
       - ./settings.env
-    ports:
-      - "8080:80"
     volumes:
       - ./data/bwdata:/data:rw
     networks:
