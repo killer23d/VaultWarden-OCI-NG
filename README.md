@@ -1,52 +1,45 @@
 # **Vaultwarden on OCI Ampere A1 Flex**
 
-This guide details the deployment of a secure, resilient Vaultwarden stack on an Oracle Cloud Infrastructure (OCI) Ampere A1 Flex VM running Ubuntu. The stack is fully containerized using Docker Compose and includes Vaultwarden, MariaDB, Redis, Caddy, Fail2ban, DDClient, and an automated backup solution.
+This guide provides a step-by-step process for deploying a secure and resilient Vaultwarden stack on an Oracle Cloud Infrastructure (OCI) Ampere A1 Flex VM running Ubuntu.
 
-This document assumes you have already provisioned an OCI Ubuntu A1 Flex VM and have SSH access to it.
+The stack is fully containerized using Docker Compose and includes:
 
-## **Table of Contents**
+* Vaultwarden  
+* MariaDB  
+* Redis  
+* Caddy  
+* Fail2ban  
+* DDClient  
+* Automated Backups
 
-1. [Host Setup & Configuration](1-host-setup--configuration)  
-   * [Network Security Rules](network-security-rules)  
-   * [Install Essential Tools](install-essential-tools)  
-   * [Automated Security Updates & Reboots](automated-security-updates--reboots)  
-   * [Configure OCI CLI](configure-oci-cli)  
-   * [Clone This Repository](clone-this-repository)  
-   * [Setup Host Cron Jobs](setup-host-cron-jobs)  
-2. [Application Configuration](2-application-configuration)  
-   * [Customize settings.env](customize-settingsenv)  
-   * [Review and Set Script Permissions](review-and-set-script-permissions)  
-3. [Secrets Management with OCI Vault](3-secrets-management-with-oci-vault)  
-   * [Initial Secret Upload](initial-secret-upload)  
-4. [Deployment](4-deployment)  
-   * [Starting the Stack](starting-the-stack)  
-5. [Maintenance & Troubleshooting](5-maintenance--troubleshooting)  
-   * [Troubleshooting with diagnose.sh](troubleshooting-with-diagnosesh)  
-   * [Backups and Restore](backups-and-restore)
+## **Step 1: Prerequisites**
 
-## **1\. Host Setup & Configuration**
+Before you begin, you must have the following:
 
-This section covers the necessary steps to prepare your Ubuntu VM for deployment.
+* An Oracle Cloud Infrastructure (OCI) account.  
+* An Ampere A1 Flex VM already provisioned with Ubuntu.  
+* SSH access to the VM.  
+* A domain name that you will point to this server.
 
-### **Network Security Rules**
+## **Step 2: Prepare the Host VM**
 
-Before anything else, you must allow public internet traffic to reach your instance on the standard web ports.
+First, you need to configure the OCI network and the Ubuntu operating system.
 
-In your OCI Console:
+### **A. Configure Network Security Rules**
 
-1. Navigate to **Networking** \-\> **Virtual Cloud Networks**.  
-2. Select the VCN your VM is in.  
-3. Go to **Security Lists** or **Network Security Groups** (whichever you are using).  
-4. Add **Ingress Rules** to allow TCP traffic on ports **80** and **443** from source 0.0.0.0/0. This allows Caddy to receive traffic and handle TLS certificates.
+You must allow public internet traffic to reach your VM on the standard web ports (80 for HTTP and 443 for HTTPS).
 
-| Type | Source | IP Protocol | Source Port | Destination Port | Description |
-| :---- | :---- | :---- | :---- | :---- | :---- |
-| Ingress | 0.0.0.0/0 | TCP | All | 80 | Allow HTTP traffic |
-| Ingress | 0.0.0.0/0 | TCP | All | 443 | Allow HTTPS traffic |
+1. In your OCI Console, go to **Networking** \> **Virtual Cloud Networks**.  
+2. Choose the VCN your VM is in and go to **Security Lists** or **Network Security Groups**.  
+3. Add the following **Ingress Rules** to allow TCP traffic from source 0.0.0.0/0:  
+   * **Destination Port 80** (for HTTP)  
+   * **Destination Port 443** (for HTTPS)
 
-### **Install Essential Tools**
+### **B. Install Essential Tools**
 
-SSH into your VM and run the following commands to install Git, the OCI CLI, and the latest versions of Docker Engine and the Docker Compose Plugin from Docker's official repository.
+SSH into your VM and run the following commands to install Docker, Git, and the OCI CLI.
+
+Bash
 
 \# Update package lists and install prerequisites  
 sudo apt-get update  
@@ -55,12 +48,12 @@ sudo apt-get install \-y ca-certificates curl gnupg git python3-pip
 
 \# Add Docker’s official GPG key  
 sudo install \-m 0755 \-d /etc/apt/keyrings  
-curl \-fsSL \[https://download.docker.com/linux/ubuntu/gpg\](https://download.docker.com/linux/ubuntu/gpg) | sudo gpg \--dearmor \-o /etc/apt/keyrings/docker.gpg  
+curl \-fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg \--dearmor \-o /etc/apt/keyrings/docker.gpg  
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
 \# Set up the Docker repository  
 echo \\  
-  "deb \[arch=$(dpkg \--print-architecture) signed-by=/etc/apt/keyrings/docker.gpg\] \[https://download.docker.com/linux/ubuntu\](https://download.docker.com/linux/ubuntu) \\  
+  "deb \[arch=$(dpkg \--print-architecture) signed-by=/etc/apt/keyrings/docker.gpg\] https://download.docker.com/linux/ubuntu \\  
   $(. /etc/os-release && echo "$VERSION\_CODENAME") stable" | \\  
   sudo tee /etc/apt/sources.list.d/docker.list \> /dev/null
 
@@ -69,140 +62,106 @@ sudo apt-get update
 sudo apt-get install \-y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 \# Add your user to the docker group to run docker commands without sudo  
-sudo usermod \-aG docker ${USER}  
-echo "Please log out and log back in for docker group changes to take effect."
+sudo usermod \-aG docker ${USER}
 
 \# Install OCI CLI  
 pip3 install oci-cli
 
-**Important:** You must log out and log back in for the docker group membership to apply. After logging back in, verify the installation with docker \--version and docker compose version.
+**Important:** You must log out and log back in for the Docker group changes to take effect.
 
-### **Automated Security Updates & Reboots**
+### **C. Configure the OCI CLI**
 
-To keep the host OS secure, we will configure automatic security updates and scheduled reboots.
+The OCI CLI needs to be configured to interact with your OCI account. This is required for managing secrets in OCI Vault.
 
-1. **Set the Host Timezone:** Ensure the VM's timezone is set correctly. This is critical for the reboot schedule. Use the same timezone as in your settings.env file.  
-   \# Example for PST/PDT  
+1. Run the interactive setup tool:  
+   Bash  
+   oci setup config
+
+2. Follow the prompts. You will need your User, Tenancy, and Region OCIDs from the OCI console.
+
+### **D. Set Up Automated Security Updates & Maintenance**
+
+To keep the host OS secure and clean, configure automatic updates and maintenance jobs.
+
+1. **Set the Host Timezone** (e.g., America/Los\_Angeles).  
+   Bash  
    sudo timedatectl set-timezone America/Los\_Angeles
 
-2. **Install the unattended-upgrades package:**  
+2. **Install the unattended-upgrades package**.  
+   Bash  
    sudo apt-get install \-y unattended-upgrades
 
-3. **Enable Automatic Updates:** Run the following command and select **"Yes"** when prompted to enable automatic updates. This will create the necessary configuration file.  
+3. **Enable Automatic Updates** by running the following command and selecting "Yes" when prompted.  
+   Bash  
    sudo dpkg-reconfigure \--priority=low unattended-upgrades
 
-4. **Configure Automatic Reboot:** Edit the configuration file to enable reboots at your desired time.  
+4. **Enable Automatic Reboots** if required by an update. Edit the configuration file:  
+   Bash  
    sudo nano /etc/apt/apt.conf.d/50unattended-upgrades
 
-   Find the following lines. You will need to uncomment them (remove the //) and set the values as shown:  
-   // Automatically reboot \*WITHOUT\* confirmation if  
-   //  the file /var/run/reboot-required is found after the upgrade.  
-   Unattended-Upgrade::Automatic-Reboot "true";
-
-   // If automatic reboot is enabled and needed, reboot at the specific  
-   // time instead of immediately after running the upgrade.  
-   // Has to be in format "HH:MM" in 24h format and in system time.  
+   Uncomment and set the following lines to enable a reboot at a specific time (e.g., 02:30):  
+   Unattended-Upgrade::Automatic-Reboot "true";  
    Unattended-Upgrade::Automatic-Reboot-Time "02:30";
 
-   Save the file and exit the editor (press CTRL+X, then Y, then Enter). Your VM will now automatically install security updates and reboot at 2:30 AM local time if an update requires it.
+5. **Set up Docker Maintenance Cron Job** to prune unused Docker resources weekly.  
+   Bash  
+   sudo crontab \-e
 
-### **Configure OCI CLI**
+   Add the following line to the file:  
+   0 2 \* \* 0 /usr/bin/docker system prune \-af
 
-The oci-cli needs to be configured to interact with your OCI account to manage Vault secrets. Run the interactive setup tool and follow the prompts. You will need your User, Tenancy, and Region OCIDs from the OCI console.
+## **Step 3: Project Setup**
 
-oci setup config
+Now, clone the project repository and configure the application settings.
 
-### **Clone This Repository**
+1. **Clone the Repository**.  
+   Bash  
+   git clone \<URL\_OF\_YOUR\_REPOSITORY\>  
+   cd \<REPOSITORY\_DIRECTORY\>
 
-Clone the project files onto your VM.
+2. Customize settings.env.  
+   Open the settings.env file in a text editor (nano settings.env) and replace all placeholder values. This is the most critical step. You will need to set your domain, generate strong passwords, and provide API keys for push notifications and your DNS provider.  
+3. Set Script Permissions.  
+   Run this command from the root of the project to make the scripts executable:  
+   Bash  
+   chmod \+x \*.sh caddy/\*.sh backup/\*.sh
 
-git clone \<URL\_OF\_YOUR\_REPOSITORY\>  
-cd \<REPOSITORY\_DIRECTORY\>
+## **Step 4: Secrets Management with OCI Vault**
 
-### **Setup Host Cron Jobs**
+To improve security, this project stores the settings.env file in OCI Vault instead of leaving it on the disk.
 
-The cron job below handles routine system maintenance that is not covered by automatic security updates.
+1. Run the Interactive Setup Script.  
+   This script will guide you through creating a vault, creating an encryption key, and uploading your settings.env file as a secret.  
+   Bash  
+   ./oci\_setup.sh
 
-Run sudo crontab \-e to edit the root user's cron jobs, and add the following line:
+2. **Save the Secret OCID**. At the end of the process, the script will output a **Secret OCID**. Copy this value and save it somewhere safe; you will need it to start the application.
 
-\# Prune unused docker images, containers, and volumes weekly at 2 AM on Sunday.  
-\# Note: System updates are handled by the unattended-upgrades package.  
-0 2 \* \* 0 /usr/bin/docker system prune \-af
+## **Step 5: Deployment**
 
-## **2\. Application Configuration**
+You can now start the entire application stack.
 
-All application configuration is managed through the settings.env file.
+1. Run the startup.sh Script.  
+   Provide the Secret OCID you saved from the previous step as an environment variable:  
+   Bash  
+   OCI\_SECRET\_OCID=\<YOUR\_SECRET\_OCID\_HERE\> ./startup.sh
 
-### **Customize settings.env**
+2. **How it Works**. This command fetches your settings from OCI Vault into a secure in-memory location, then starts all the Docker containers. The in-memory file is deleted when the script exits.  
+3. **Access Your Instance**. Your Vaultwarden instance should now be live and accessible at the domain you configured.
 
-Open the settings.env file in a text editor (nano settings.env). This is the most critical step. You must replace all placeholder values.
+## **Step 6: Maintenance & Troubleshooting**
 
-* **APP\_DOMAIN**: Set this to the public domain name for your Vaultwarden instance (e.g., vault.yourdomain.com).  
-* **MariaDB Passwords**: Use openssl rand \-base64 32 to generate strong, unique passwords for MARIADB\_ROOT\_PASSWORD and MARIADB\_PASSWORD.  
-* **Vaultwarden ADMIN\_TOKEN**: Generate another unique string with openssl rand \-base64 32\. This token gives you access to the Vaultwarden admin panel at https://\<YOUR\_DOMAIN\>/admin.  
-* **Push Notifications**: To enable push notifications to mobile apps, you must obtain an ID and key from [bitwarden.com/host](https://bitwarden.com/host) and set PUSH\_INSTALLATION\_ID and PUSH\_INSTALLATION\_KEY.  
-* **Redis Password**: Generate a password for REDIS\_PASSWORD.  
-* **SMTP Settings**: Configure these to allow Vaultwarden to send emails for invitations and notifications. The example uses MailerSend, but any SMTP provider will work.  
-* **BACKUP\_PASSPHRASE**: A critical password used to encrypt your backups. **Do not lose this passphrase.**  
-* **Caddy CADDY\_EMAIL**: The email address Caddy will use for Let's Encrypt SSL certificate registration.  
-* **DDClient**: Configure your root domain (DDCLIENT\_DOMAIN), the subdomain for Vaultwarden (DDCLIENT\_HOST, e.g., 'vault'), and your Cloudflare API token (CF\_API\_TOKEN).  
-* **Fail2ban FAIL2BAN\_DEST**: The email address where Fail2ban will send notification emails when an IP is banned.  
-* **Timezone TZ**: Set to your local timezone (e.g., America/Los\_Angeles).
+### **Troubleshooting**
 
-### **Review and Set Script Permissions**
+If you encounter issues, use the diagnose.sh script to check container health, view logs, and test network connectivity.
 
-The provided shell scripts need to be executable. Run this command from the root of the project directory to ensure they are set correctly.
-
-chmod \+x \*.sh caddy/\*.sh backup/\*.sh
-
-## **3\. Secrets Management with OCI Vault**
-
-For better security, the settings.env file should not be stored on the disk of the VM permanently. This project uses OCI Vault to store the settings securely. The startup.sh script will fetch it into memory when the application starts.
-
-### **Initial Secret Upload**
-
-The oci\_setup.sh script is an interactive wizard that will:
-
-1. Verify your OCI CLI is working.  
-2. Ask for your Compartment OCID.  
-3. Help you select or create a Vault.  
-4. Help you select or create an encryption Key.  
-5. Upload your populated settings.env file as a secret.
-
-Run the script from the project root:
-
-./oci\_setup.sh
-
-At the end of the process, it will output the **Secret OCID**. **Copy this OCID and save it somewhere safe.**
-
-## **4\. Deployment**
-
-### **Starting the Stack**
-
-To start the entire application stack, you will run the startup.sh script. You must provide the Secret OCID you saved from the previous step as an environment variable.
-
-OCI\_SECRET\_OCID=\<YOUR\_SECRET\_OCID\_HERE\> ./startup.sh
-
-This command will:
-
-1. Fetch the Cloudflare IPs for Caddy.  
-2. Connect to OCI Vault using the provided OCID.  
-3. Download your settings.env file into a secure in-memory location (/dev/shm).  
-4. Start all containers defined in docker-compose.yml using that environment file.  
-5. The script then cleans up the in-memory file upon exit.
-
-Your Vaultwarden instance should now be live and accessible at your domain.
-
-## **5\. Maintenance & Troubleshooting**
-
-### **Troubleshooting with diagnose.sh**
-
-If you encounter issues, the diagnose.sh script is your first tool for troubleshooting. It checks container health, shows recent logs, and tests internal network connectivity.
+Bash
 
 ./diagnose.sh
 
 ### **Backups and Restore**
 
-* **Automated Backups**: The backup container runs a cron job every night at 03:00 UTC. It creates an encrypted tarball of your Vaultwarden data and MariaDB database, stores it locally in ./data/backups, and emails it to you.  
-* **Manual Restore**: If you need to restore from a backup, use the interactive restore.sh script. You must provide the GPG\_PASSPHRASE from your settings.env file to decrypt the backup.  
+* **Automated Backups**: A cron job runs every night to create an encrypted backup of your Vaultwarden data and database. It is stored locally in ./data/backups and emailed to you.  
+* **Manual Restore**: To restore from a backup, use the interactive restore.sh script. You must provide your backup passphrase to decrypt the file.  
+  Bash  
   GPG\_PASSPHRASE='\<your\_backup\_passphrase\>' ./backup/restore.sh  
