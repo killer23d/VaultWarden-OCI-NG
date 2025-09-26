@@ -6,12 +6,12 @@ LABEL maintainer="you@example.com"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Create backup user
-# Create backup user
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     gpg \
     gnupg \
     msmtp \
+    mutt \
     ca-certificates \
     curl \
     jq \
@@ -31,7 +31,6 @@ RUN apt-get update \
 COPY backup.sh /backup/backup.sh
 COPY restore.sh /backup/restore.sh
 COPY crontab /etc/cron.d/bw_backup
-COPY msmtprc /etc/msmtp.d/msmtprc.template
 
 RUN chmod 700 /backup/backup.sh /backup/restore.sh \
   && chmod 644 /etc/cron.d/bw_backup \
