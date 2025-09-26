@@ -13,21 +13,21 @@ action = %(action_mwl)s      # Use an action that sends mail
 enabled = true
 filter = caddy-404
 port = http,https
-logpath = /logs/caddy/access.log # Corrected path
+logpath = /logs/access.log # Corrected path
 maxretry = 10
 
 [bitwarden-admin]
 enabled = true
 filter = bitwarden-admin
 port = http,https
-logpath = /logs/vaultwarden/vaultwarden.log # Corrected path
+logpath = /logs/vaultwarden/vaultwarden.log
 maxretry = 3
 
 [vaultwarden]
 enabled  = true
 filter   = vaultwarden
 port     = http,https
-logpath  = /logs/vaultwarden/vaultwarden.log # Corrected path
+logpath  = /logs/vaultwarden/vaultwarden.log
 maxretry = 5
 
 [sshd]
