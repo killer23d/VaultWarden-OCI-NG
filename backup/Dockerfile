@@ -6,6 +6,7 @@ LABEL maintainer="you@example.com"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Create backup user
+# Create backup user
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     gpg \
