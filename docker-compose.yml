@@ -84,7 +84,8 @@ services:
     volumes:
       - ./fail2ban/jail.local:/config/jail.local:ro
       - ./fail2ban/filter.d:/config/filter.d:ro
-      - /var/log:/var/log:ro
+      - ./data/caddy_logs:/logs/caddy:ro # Mount Caddy logs (read-only)
+      - ./data/bwdata:/logs/vaultwarden:ro # Mount Vaultwarden logs (read-only)
       - ./data/fail2ban:/config:rw
     cap_add:
       - NET_ADMIN
