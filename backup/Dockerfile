@@ -34,7 +34,7 @@ COPY msmtprc /etc/msmtp.d/msmtprc.template
 
 RUN chmod 700 /backup/backup.sh /backup/restore.sh \
   && chmod 644 /etc/cron.d/bw_backup \
-  && crontab /etc/cron.d/bw_backup || true \
+  && crontab /etc/cron.d/bw_backup \
   && chmod -R 700 /etc/msmtp.d
 
 USER backup
