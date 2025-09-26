@@ -40,5 +40,3 @@ RUN chmod 700 /backup/backup.sh /backup/restore.sh \
 
 USER backup
 WORKDIR /backup
-
-ENTRYPOINT ["/backup/backup.sh"]
