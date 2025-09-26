@@ -146,8 +146,6 @@ services:
     image: containrrr/watchtower
     restart: always
     container_name: watchtower
-    depends_on:
-      - vaultwarden
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment: # Corrected indentation
