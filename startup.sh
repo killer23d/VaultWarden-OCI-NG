@@ -1,4 +1,4 @@
-#!/usr/-bin/env bash
+#!/usr/bin/env bash
 # startup.sh -- secure fetch of settings.env into RAM, then start compose
 set -euo pipefail
 
