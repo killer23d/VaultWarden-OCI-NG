@@ -100,9 +100,9 @@ services:
       retries: 3
     networks:
       - bw_net
-    depends_on: # Add this block
+    depends_on:
       caddy:
-        condition: service_started
+        condition: service_healthy
       vaultwarden:
         condition: service_healthy
 
@@ -146,17 +146,6 @@ services:
       interval: 30m
       timeout: 10s
       retries: 1
-
-  watchtower:
-    image: containrrr/watchtower
-    restart: always
-    container_name: watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE}
-      TZ: ${TZ}
 
 networks:
   bw_net:
