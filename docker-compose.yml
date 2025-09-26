@@ -147,10 +147,10 @@ services:
     restart: always
     container_name: watchtower
     depends_on:
-      - vaultwarden # Corrected service name
+      - vaultwarden
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-     environment:
+    environment: # Corrected indentation
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE}
       - TZ=${TZ}
