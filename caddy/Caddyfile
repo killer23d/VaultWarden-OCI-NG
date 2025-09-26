@@ -1,4 +1,3 @@
-# caddy/Caddyfile
 {
     servers {
         trusted_proxies {
@@ -16,19 +15,8 @@
         respond "OK" 200
     }
 
-    # Handle specific application paths
-    handle /notifications/* {
-        reverse_proxy vaultwarden:80
-    }
-    
-    handle /vault/* {
-        reverse_proxy vaultwarden:80
-    }
-
-    # Handle all other traffic last
-    handle /* {
-        reverse_proxy vaultwarden:80
-    }
+    # Handle all other traffic
+    reverse_proxy vaultwarden:80
 
     tls {env.ADMIN_EMAIL}
     log {
