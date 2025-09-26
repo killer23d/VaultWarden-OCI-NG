@@ -148,10 +148,10 @@ services:
     container_name: watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    environment: # Corrected indentation
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE}
-      - TZ=${TZ}
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE}
+      TZ: ${TZ}
 
 networks:
   bw_net:
