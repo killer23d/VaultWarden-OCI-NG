@@ -1,36 +1,42 @@
-# **Vaultwarden on OCI Ampere A1 Flex**
 
-This guide provides a step-by-step process for deploying a secure and resilient Vaultwarden stack on an Oracle Cloud Infrastructure (OCI) Ampere A1 Flex VM running Ubuntu.
 
-The stack is fully containerized using Docker Compose and includes:
+# **Vaultwarden on OCI Ampere A1 Flex (Enhanced for Resilience)**
 
-* Vaultwarden  
-* MariaDB  
-* Redis  
-* Caddy  
-* Fail2ban  
-* DDClient  
-* Automated Backups
+This guide provides a comprehensive, step-by-step process for deploying a secure, resilient, and fully containerized Vaultwarden stack on an Oracle Cloud Infrastructure (OCI) Ampere A1 Flex virtual machine running Ubuntu.
+
+This project is designed for security and ease of maintenance, featuring a complete Docker Compose setup that includes:
+
+* **Vaultwarden**: The core password manager service.  
+* **MariaDB**: A robust database for storing Vaultwarden data.  
+* **Redis**: Used for caching to improve performance.  
+* **Caddy**: A modern, powerful web server that automatically handles HTTPS.  
+* **Fail2ban**: Protects against brute-force attacks by monitoring logs and banning suspicious IPs.  
+* **DDClient**: Automatically updates your DNS records, essential for dynamic IP addresses.  
+* **Automated Backups**: Nightly encrypted backups of your data, sent to you via email.
+
+---
 
 ## **Step 1: Prerequisites**
 
-Before you begin, you must have the following:
+Before you begin, ensure you have the following:
 
-* An Oracle Cloud Infrastructure (OCI) account.  
-* An Ampere A1 Flex VM already provisioned with Ubuntu.  
-* SSH access to the VM.  
-* A domain name that you will point to this server.
+* An active **Oracle Cloud Infrastructure (OCI)** account.  
+* An **Ampere A1 Flex VM** already provisioned with **Ubuntu**.  
+* **SSH access** to the virtual machine.  
+* A **domain name** that you will point to this server's IP address.
+
+---
 
 ## **Step 2: Prepare the Host VM**
 
-First, you need to configure the OCI network and the Ubuntu operating system.
+First, you need to configure the OCI network and prepare the Ubuntu operating system for the Vaultwarden stack.
 
 ### **A. Configure Network Security Rules**
 
 You must allow public internet traffic to reach your VM on the standard web ports (80 for HTTP and 443 for HTTPS).
 
-1. In your OCI Console, go to **Networking** \> **Virtual Cloud Networks**.  
-2. Choose the VCN your VM is in and go to **Security Lists** or **Network Security Groups**.  
+1. In your OCI Console, navigate to **Networking** \> **Virtual Cloud Networks**.  
+2. Select the VCN your VM is in and go to **Security Lists** or **Network Security Groups**.  
 3. Add the following **Ingress Rules** to allow TCP traffic from source 0.0.0.0/0:  
    * **Destination Port 80** (for HTTP)  
    * **Destination Port 443** (for HTTPS)
@@ -67,17 +73,17 @@ sudo usermod \-aG docker ${USER}
 \# Install OCI CLI  
 pip3 install oci-cli
 
-**Important:** You must log out and log back in for the Docker group changes to take effect.
+**Important:** You must **log out and log back in** for the Docker group changes to take effect.
 
 ### **C. Configure the OCI CLI**
 
-The OCI CLI needs to be configured to interact with your OCI account. This is required for managing secrets in OCI Vault.
+The OCI CLI needs to be configured to interact with your OCI account. This is a critical step, as it provides the authentication needed to fetch your secrets from OCI Vault.
 
 1. Run the interactive setup tool:  
    Bash  
    oci setup config
 
-2. Follow the prompts. You will need your User, Tenancy, and Region OCIDs from the OCI console.
+2. Follow the prompts. You will need your **User, Tenancy, and Region OCIDs** from the OCI console. This process creates a configuration and key file (usually in \~/.oci/) that the startup.sh script relies on to authenticate with OCI.
 
 ### **D. Set Up Automated Security Updates & Maintenance**
 
@@ -103,12 +109,18 @@ To keep the host OS secure and clean, configure automatic updates and maintenanc
    Unattended-Upgrade::Automatic-Reboot "true";  
    Unattended-Upgrade::Automatic-Reboot-Time "02:30";
 
-5. **Set up Docker Maintenance Cron Job** to prune unused Docker resources weekly.  
+5. **Set up Maintenance Cron Jobs**.  
    Bash  
    sudo crontab \-e
 
-   Add the following line to the file:  
+   Add the following lines to the file. **Note:** You must replace /path/to/project with the actual path to your project directory.  
+   \# Prune unused Docker resources every Sunday at 2 AM  
    0 2 \* \* 0 /usr/bin/docker system prune \-af
+
+   \# Update Cloudflare IPs for Caddy every Sunday at 3 AM  
+   0 3 \* \* 0 /path/to/project/caddy/update\_cloudflare\_ips.sh \>\> /path/to/project/data/caddy\_logs/cloudflare\_update.log 2\>&1
+
+---
 
 ## **Step 3: Project Setup**
 
@@ -126,6 +138,8 @@ Now, clone the project repository and configure the application settings.
    Bash  
    chmod \+x \*.sh caddy/\*.sh backup/\*.sh
 
+---
+
 ## **Step 4: Secrets Management with OCI Vault**
 
 To improve security, this project stores the settings.env file in OCI Vault instead of leaving it on the disk.
@@ -135,21 +149,78 @@ To improve security, this project stores the settings.env file in OCI Vault inst
    Bash  
    ./oci\_setup.sh
 
-2. **Save the Secret OCID**. At the end of the process, the script will output a **Secret OCID**. Copy this value and save it somewhere safe; you will need it to start the application.
+2. **Save the Secret OCID**. At the end of the process, the script will output a **Secret OCID**. Copy this value and save it somewhere safe; you will need it for the next steps.
+
+---
 
 ## **Step 5: Deployment**
 
 You can now start the entire application stack.
 
-1. Run the startup.sh Script.  
+1. Run the startup.sh Script Manually (for the first time).  
    Provide the Secret OCID you saved from the previous step as an environment variable:  
    Bash  
    OCI\_SECRET\_OCID=\<YOUR\_SECRET\_OCID\_HERE\> ./startup.sh
 
-2. **How it Works**. This command fetches your settings from OCI Vault into a secure in-memory location, then starts all the Docker containers. The in-memory file is deleted when the script exits.  
+2. **How it Works**. This command uses two key components:  
+   * The **OCI CLI configuration** (from Step 2C) to authenticate with your account.  
+   * The **Secret OCID** to identify which secret to fetch.
+
+It then pulls your settings into a secure in-memory location and starts all the Docker containers. The in-memory file is deleted when the script exits.
+
 3. **Access Your Instance**. Your Vaultwarden instance should now be live and accessible at the domain you configured.
 
-## **Step 6: Maintenance & Troubleshooting**
+---
+
+## **Step 6: Enable Unattended Startup on Reboot**
+
+To ensure your Vaultwarden stack automatically restarts after the VM reboots, you need to create a systemd service. This service will run the startup.sh script automatically, fetching the secrets and starting the containers.
+
+1. **Create a systemd Service File**.  
+   Bash  
+   sudo nano /etc/systemd/system/vaultwarden-startup.service
+
+2. Paste the following configuration.  
+   You must replace \<YOUR\_USER\>, /path/to/your/project, and \<YOUR\_SECRET\_OCID\_HERE\> with your actual values.  
+   Ini, TOML  
+   \[Unit\]  
+   Description\=Vaultwarden Startup Service  
+   Requires\=docker.service  
+   After\=network-online.target docker.service
+
+   \[Service\]  
+   User\=\<YOUR\_USER\>  
+   Group\=\<YOUR\_USER\>  
+   WorkingDirectory\=/path/to/your/project  
+   Environment\="OCI\_SECRET\_OCID=\<YOUR\_SECRET\_OCID\_HERE\>"  
+   ExecStart\=/path/to/your/project/startup.sh  
+   Restart\=on\-failure  
+   RestartSec\=10
+
+   \[Install\]  
+   WantedBy\=multi-user.target
+
+3. **Enable and Start the Service**.  
+   Bash  
+   \# Reload the systemd manager configuration  
+   sudo systemctl daemon-reload
+
+   \# Enable the service to start automatically on boot  
+   sudo systemctl enable vaultwarden-startup.service
+
+   \# Start the service now to test it  
+   sudo systemctl start vaultwarden-startup.service
+
+4. Verify the Service.  
+   Check that the service is active and running without errors.  
+   Bash  
+   sudo systemctl status vaultwarden-startup.service
+
+   Your Vaultwarden stack is now fully resilient and will start automatically on boot.
+
+---
+
+## **Step 7: Maintenance & Troubleshooting**
 
 ### **Troubleshooting**
 
