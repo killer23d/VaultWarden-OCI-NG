@@ -2,6 +2,7 @@
 # oci_setup.sh - An interactive script to facilitate OCI Vault setup,
 # including initial OCI CLI configuration if needed.
 
+set -e
 set -euo pipefail
 
 # --- Main Functions ---
