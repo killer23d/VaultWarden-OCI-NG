@@ -1,50 +1,65 @@
 # fail2ban/jail.d/jail.local
+# A layered and progressive Fail2ban configuration
+
 [DEFAULT]
-ignoreip = 127.0.0.1/8 ::1
-bantime = 3600
-findtime = 600
+# Ignore local networks first, then append Cloudflare IPs from the synced file.
+ignoreip = 127.0.0.1/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+ignoreip = %(ignoreip)s /config/cloudflare_ips.txt
+
+bantime  = 1h
+findtime = 10m
 maxretry = 5
-backend = auto
-banaction = iptables-multiport
-destemail = ${FAIL2BAN_DEST} # Set a default destination email
-action = %(action_mwl)s      # Use an action that sends mail
+backend  = auto
+destemail = ${FAIL2BAN_DEST}
+action    = %(action_mwl)s
 
-[caddy-404]
-enabled = true
-filter = caddy-404
-port = http,https
-logpath = /logs/caddy/access.log
-maxretry = 10
-
-[vaultwarden-admin]
-enabled = true
-filter = vaultwarden-admin
-port = http,https
-logpath = /logs/vaultwarden/logs/vaultwarden.log
-maxretry = 3
-
+# --- APPLICATION Jails ---
 [vaultwarden]
 enabled  = true
 filter   = vaultwarden
 port     = http,https
 logpath  = /logs/vaultwarden/logs/vaultwarden.log
 maxretry = 5
+bantime  = 1h
 
+[vaultwarden-admin]
+enabled  = true
+filter   = vaultwarden-admin
+port     = http,https
+logpath  = /logs/vaultwarden/logs/vaultwarden.log
+maxretry = 3
+bantime  = 6h
+
+# --- PROACTIVE SCANNING Jails ---
+[caddy-vulnerability-scan]
+enabled  = true
+filter   = caddy-vulnerability-scan
+port     = http,https
+logpath  = /logs/caddy/access.log
+maxretry = 2
+findtime = 5m
+bantime  = 12h
+
+[caddy-bad-bots]
+enabled  = true
+filter   = caddy-bad-bots
+port     = http,https
+logpath  = /logs/caddy/access.log
+maxretry = 1
+bantime  = 24h
+
+# --- SYSTEM Jails ---
 [sshd]
-# Protects the SSH daemon on the host machine.
-# Assumes the host's /var/log is mounted into the container.
-# NOTE: You must add a volume mount to your docker-compose.yml for this to work:
-#      - /var/log:/var/log/host:ro
 enabled   = true
-maxretry  = 5
+maxretry  = 3
 findtime  = 10m
-bantime   = 1h
-logpath   = /var/log/host/auth.log # Path inside the container
+bantime   = 6h
+logpath   = /var/log/host/auth.log
 
+# --- RECIDIVISM Jail ---
 [recidive]
-# This jail bans IPs that are repeatedly banned by other jails.
 enabled   = true
-logpath   = /config/fail2ban.log  # Fail2ban's own log file
-maxretry  = 5                     # Ban after 5 bans in other jails
-findtime  = 1d                    # within one day
-bantime   = 1w                    # Ban for one week
+logpath   = /config/fail2ban.log
+maxretry  = 3
+findtime  = 1d
+bantime   = 1w
