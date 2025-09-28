@@ -20,14 +20,14 @@ maxretry = 10
 enabled = true
 filter = vaultwarden-admin
 port = http,https
-logpath = /logs/vaultwarden/vaultwarden.log
+logpath = /logs/vaultwarden/logs/vaultwarden.log
 maxretry = 3
 
 [vaultwarden]
 enabled  = true
 filter   = vaultwarden
 port     = http,https
-logpath  = /logs/vaultwarden/vaultwarden.log
+logpath  = /logs/vaultwarden/logs/vaultwarden.log
 maxretry = 5
 
 [sshd]
