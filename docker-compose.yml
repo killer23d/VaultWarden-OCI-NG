@@ -5,6 +5,7 @@ services:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
+    user: "1000:1000"
     env_file:
       - ./settings.env
     volumes:
@@ -21,21 +22,22 @@ services:
     image: mariadb:latest
     container_name: bw_mariadb
     restart: unless-stopped
+    user: "999:999"
     env_file:
       - ./settings.env
     volumes:
       - ./data/mariadb:/var/lib/mysql:rw
     environment:
-      # Map your variables from settings.env to what the container needs
       MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MARIADB_DATABASE}
       MYSQL_USER: ${MARIADB_USER}
       MYSQL_PASSWORD: ${MARIADB_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p${MARIADB_ROOT_PASSWORD} >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MARIADB_ROOT_PASSWORD} >/dev/null 2>&1 || exit 1"]
       interval: 1m30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 40s
     networks:
       - bw_net
 
@@ -43,11 +45,14 @@ services:
     image: redis:latest
     container_name: bw_redis
     restart: unless-stopped
+    user: "999:999"
+    env_file:
+      - ./settings.env
     volumes:
       - ./data/redis:/data:rw
-    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -58,6 +63,7 @@ services:
     image: caddy:latest
     container_name: bw_caddy
     restart: unless-stopped
+    user: "1000:1000"
     env_file:
       - ./settings.env
     volumes:
@@ -67,8 +73,8 @@ services:
       - ./data/caddy_logs:/logs
       - ./caddy/cloudflare_ips.caddy:/etc/caddy/cloudflare_ips.caddy:ro
     ports:
-      - "80:80"
-      - "443:443"
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS --max-time 5 https://localhost || curl -fsS --max-time 5 http://localhost || exit 1"]
       interval: 1m
@@ -84,8 +90,9 @@ services:
     volumes:
       - ./fail2ban/jail.local:/config/jail.local:ro
       - ./fail2ban/filter.d:/config/filter.d:ro
-      - ./data/caddy_logs:/logs/caddy:ro # Mount Caddy logs (read-only)
-      - ./data/bwdata:/logs/vaultwarden:ro # Mount Vaultwarden logs (read-only)
+      - ./caddy/cloudflare_ips.txt:/config/cloudflare_ips.txt:ro
+      - ./data/caddy_logs:/logs/caddy:ro
+      - ./data/bwdata:/logs/vaultwarden:ro
       - ./data/fail2ban:/config:rw
       - /var/log:/var/log/host:ro
     cap_add:
@@ -123,21 +130,23 @@ services:
       - bw_net
 
   backup:
-  build: ./backup
-  container_name: bw_backup
-  restart: unless-stopped
-  user: "1000:1000"
-  env_file:
-    - ./settings.env
-  volumes:
-    - ./data/backups:/backups:rw
-    - ./data/backup_logs:/var/log/backup:rw
-    - ./data/bwdata:/data:ro
-    - ./data/mariadb:/var/lib/mysql:ro
-    - ./backup/rclone.conf:/root/.config/rclone/rclone.conf:ro  # Mount your pre-configured rclone.conf
-  entrypoint: ["/usr/sbin/crond", "-f"]
-  networks:
-    - bw_net
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
+    image: bitwarden_backup:latest
+    container_name: bw_backup
+    env_file:
+      - ./settings.env
+    volumes:
+      - ./data/backups:/backups:rw
+      - ./data/backup_logs:/var/log/backup:rw
+      - ./data/bwdata:/data:ro
+      - ./data/mariadb:/var/lib/mysql:ro
+      - ./backup/rclone.conf:/root/.config/rclone/rclone.conf:ro
+    entrypoint: ["/usr/sbin/cron", "-f"]
+    restart: "unless-stopped"
+    networks:
+      - bw_net
     healthcheck:
       test: ["CMD-SHELL", "test -w /backups || exit 1"]
       interval: 30m
@@ -154,6 +163,8 @@ services:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE}
       TZ: ${TZ}
+    networks:
+      - bw_net
 
 networks:
   bw_net:
