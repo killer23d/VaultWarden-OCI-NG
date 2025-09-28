@@ -46,30 +46,30 @@ SSH into your VM and run the following commands to install Docker, Git, and the 
 
 Bash
 
-\# Update package lists and install prerequisites  
-sudo apt-get update  
-sudo apt-get upgrade \-y  
+\# Update package lists and install prerequisites    
+sudo apt-get update    
+sudo apt-get upgrade \-y    
 sudo apt-get install \-y ca-certificates curl gnupg git python3-pip
 
-\# Add Docker’s official GPG key  
-sudo install \-m 0755 \-d /etc/apt/keyrings  
-curl \-fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg \--dearmor \-o /etc/apt/keyrings/docker.gpg  
+\# Add Docker’s official GPG key    
+sudo install \-m 0755 \-d /etc/apt/keyrings    
+curl \-fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg \--dearmor \-o /etc/apt/keyrings/docker.gpg    
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
-\# Set up the Docker repository  
+\# Set up the Docker repository    
 echo \\  
   "deb \[arch=$(dpkg \--print-architecture) signed-by=/etc/apt/keyrings/docker.gpg\] https://download.docker.com/linux/ubuntu \\  
   $(. /etc/os-release && echo "$VERSION\_CODENAME") stable" | \\  
   sudo tee /etc/apt/sources.list.d/docker.list \> /dev/null
 
-\# Install Docker Engine and Compose Plugin  
-sudo apt-get update  
+\# Install Docker Engine and Compose Plugin    
+sudo apt-get update    
 sudo apt-get install \-y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-\# Add your user to the docker group to run docker commands without sudo  
+\# Add your user to the docker group to run docker commands without sudo    
 sudo usermod \-aG docker ${USER}
 
-\# Install OCI CLI  
+\# Install OCI CLI    
 pip3 install oci-cli
 
 **Important:** You must **log out and log back in** for the Docker group changes to take effect.
@@ -84,19 +84,19 @@ To keep the host OS secure and clean, configure automatic updates and maintenanc
 
 2. **Install and Enable Automatic Updates**.  
    Bash  
-   sudo apt-get install \-y unattended-upgrades  
+   sudo apt-get install \-y unattended-upgrades    
    sudo dpkg-reconfigure \--priority=low unattended-upgrades
 
 3. **Set up Maintenance Cron Jobs**.  
    Bash  
    sudo crontab \-e
 
-   Add the following lines. **Note:** You must replace /path/to/project with the actual path to your project directory.  
+   Add the following lines. **Note:** You must replace \<YOUR\_USER\> with your actual username.  
    \# Prune unused Docker resources every Sunday at 2 AM  
    0 2 \* \* 0 /usr/bin/docker system prune \-af
 
    \# Update Cloudflare IPs for Caddy every Sunday at 3 AM  
-   0 3 \* \* 0 /path/to/project/caddy/update\_cloudflare\_ips.sh \>\> /path/to/project/data/caddy\_logs/cloudflare\_update.log 2\>&1
+   0 3 \* \* 0 /home/\<YOUR\_USER\>/VaultWarden-OCI/caddy/update\_cloudflare\_ips.sh \>\> /home/\<YOUR\_USER\>/VaultWarden-OCI/data/caddy\_logs/cloudflare\_update.log 2\>&1
 
 ---
 
@@ -104,7 +104,7 @@ To keep the host OS secure and clean, configure automatic updates and maintenanc
 
 1. **Clone the Repository**.  
    Bash  
-   git clone \<URL\_OF\_YOUR\_REPOSITORY\>  
+   git clone \<URL\_OF\_YOUR\_REPOSITORY\>    
    cd \<REPOSITORY\_DIRECTORY\>
 
 2. Customize settings.env.  
@@ -147,28 +147,28 @@ The final step is to configure the systemd service on the VM to run the startup 
    Bash  
    sudo nano /etc/systemd/system/vaultwarden.service
 
-2. **Paste the Configuration**. You must replace \<YOUR\_USER\>, /path/to/your/project, and \<YOUR\_SECRET\_OCID\_HERE\> with your actual values.  
+2. **Paste the Configuration**. You must replace \<YOUR\_USER\> and \<YOUR\_SECRET\_OCID\_HERE\> with your actual values.  
    Ini, TOML  
-   \[Unit\]  
-   Description\=Vaultwarden Startup Service  
-   Requires\=docker.service  
+   \[Unit\]    
+   Description\=Vaultwarden Startup Service    
+   Requires\=docker.service    
    After\=network-online.target docker.service
 
-   \[Service\]  
-   User\=\<YOUR\_USER\>  
-   Group\=\<YOUR\_USER\>  
-   WorkingDirectory\=/path/to/your/project  
-   Environment\="OCI\_SECRET\_OCID=\<YOUR\_SECRET\_OCID\_HERE\>"  
-   ExecStart\=/path/to/your/project/startup.sh  
-   Restart\=on\-failure  
+   \[Service\]    
+   User\=\<YOUR\_USER\>    
+   Group\=\<YOUR\_USER\>    
+   WorkingDirectory\=/home/\<YOUR\_USER\>/VaultWarden-OCI  
+   Environment\="OCI\_SECRET\_OCID=\<YOUR\_SECRET\_OCID\_HERE\>"    
+   ExecStart\=/home/\<YOUR\_USER\>/VaultWarden-OCI/startup.sh  
+   Restart\=on\-failure    
    RestartSec\=10
 
-   \[Install\]  
+   \[Install\]    
    WantedBy\=multi-user.target
 
 3. **Enable and Start the Service**.  
    Bash  
-   sudo systemctl daemon-reload  
+   sudo systemctl daemon-reload    
    sudo systemctl enable \--now vaultwarden.service
 
 4. **Verify the Service**.  
@@ -194,4 +194,4 @@ Bash
 * **Automated Backups**: A cron job runs every night to create an encrypted backup of your Vaultwarden data and database. It is stored locally in ./data/backups and emailed to you.  
 * **Manual Restore**: To restore from a backup, use the interactive restore.sh script. You must provide your backup passphrase to decrypt the file.  
   Bash  
-  GPG\_PASSPHRASE='\<your\_backup\_passphrase\>' ./backup/restore.sh  
+  GPG\_PASSPHRAsE='\<your\_backup\_passphrase\>' ./backup/restore.sh    
