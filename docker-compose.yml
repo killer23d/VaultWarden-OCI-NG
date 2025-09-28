@@ -123,23 +123,21 @@ services:
       - bw_net
 
   backup:
-    build:
-      context: ./backup
-      dockerfile: Dockerfile
-    image: bitwarden_backup:latest
-    container_name: bw_backup
-    env_file:
-      - ./settings.env
-    volumes:
-      - ./data/backups:/backups:rw
-      - ./data/backup_logs:/var/log/backup:rw
-      - ./data/bwdata:/data:ro
-      - ./data/mariadb:/var/lib/mysql:ro
-    # Use cron as the entrypoint to run scheduled backups
-    entrypoint: ["/usr/sbin/cron", "-f"]
-    restart: "unless-stopped" # Keep the container running
-    networks:
-      - bw_net
+  build: ./backup
+  container_name: bw_backup
+  restart: unless-stopped
+  user: "1000:1000"
+  env_file:
+    - ./settings.env
+  volumes:
+    - ./data/backups:/backups:rw
+    - ./data/backup_logs:/var/log/backup:rw
+    - ./data/bwdata:/data:ro
+    - ./data/mariadb:/var/lib/mysql:ro
+    - ./backup/rclone.conf:/root/.config/rclone/rclone.conf:ro  # Mount your pre-configured rclone.conf
+  entrypoint: ["/usr/sbin/crond", "-f"]
+  networks:
+    - bw_net
     healthcheck:
       test: ["CMD-SHELL", "test -w /backups || exit 1"]
       interval: 30m
