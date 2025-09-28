@@ -76,7 +76,7 @@ passwordeval "echo ${SMTP_PASSWORD}"
 EOF
 
 # Define email subject and body
-SUBJECT="[Backup] Vaultwarden backup for ${APP_DOMAIN:-(unknown)} on $(date -u +'%Y-%m-%d')"
+SUBJECT="[Backup] Vaultwarden backup for \"${APP_DOMAIN:-(unknown)}\" on $(date -u +'%Y-%m-%d')"
 BODY="Encrypted backup file is attached.\n\nFile: $(basename "$ENCRYPTED")\nTimestamp: $(timestamp)"
 
 # Send email with mutt, using the temporary msmtp config
