@@ -16,7 +16,7 @@ port = http,https
 logpath = /logs/caddy/access.log
 maxretry = 10
 
-[bitwarden-admin]
+[vaultwarden-admin]
 enabled = true
 filter = vaultwarden-admin
 port = http,https
