@@ -113,10 +113,9 @@ services:
     env_file:
       - ./settings.env
     volumes:
-      - ./ddclient/ddclient.conf:/config/ddclient.conf:ro
-      - ./ddclient/ddclient.log:/config/ddclient.log
+      - ./ddclient:/config:rw
     healthcheck:
-      ["CMD-SHELL", "test $(find /config/ddclient.log -mmin -60) || exit 1"]
+      test: ["CMD-SHELL", "ddclient -query | grep -q 'address'"]
       interval: 5m
       timeout: 10s
       retries: 2
