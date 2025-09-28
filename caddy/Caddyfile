@@ -15,6 +15,11 @@
         respond "OK" 200
     }
 
+    # Handle admin panel
+    handle /admin* {
+        reverse_proxy vaultwarden:80
+    }
+
     # Handle all other traffic
     reverse_proxy vaultwarden:80
 
