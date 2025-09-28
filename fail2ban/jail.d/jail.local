@@ -18,7 +18,7 @@ maxretry = 10
 
 [bitwarden-admin]
 enabled = true
-filter = bitwarden-admin
+filter = vaultwarden-admin
 port = http,https
 logpath = /logs/vaultwarden/vaultwarden.log
 maxretry = 3
