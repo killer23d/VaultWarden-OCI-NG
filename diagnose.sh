@@ -69,7 +69,7 @@ if docker compose ps -q bw_fail2ban &> /dev/null; then
   docker compose exec -T bw_fail2ban fail2ban-client status recidive | grep "Banned IP"
   docker compose exec -T bw_fail2ban fail2ban-client status sshd | grep "Banned IP"
   docker compose exec -T bw_fail2ban fail2ban-client status vaultwarden | grep "Banned IP"
-  docker compose exec -T bw_fail2ban fail2ban-client status bitwarden-admin | grep "Banned IP"
+  docker compose exec -T bw_fail2ban fail2ban-client status vaultwarden-admin | grep "Banned IP"
   docker compose exec -T bw_fail2ban fail2ban-client status caddy-404 | grep "Banned IP"
 else
     echo -e "${YELLOW}Fail2ban container not running. Skipping check.${NC}"
