@@ -1,90 +1,162 @@
 #!/usr/bin/env bash
 # backup/backup.sh
-# Usage: this script expects environment variables in settings.env to be exported before running:
-#   GPG_PASSPHRASE, SMTP_USER, SMTP_PASSWORD, SMTP_HOST, SMTP_FROM, BACKUP_EMAIL_RECIPIENT, APP_DOMAIN
-#
-# Must be run as non-root (Dockerfile uses user 'backup'), and /backups must be writable by this user.
-set -euo pipefail
+# Enhanced Vaultwarden backup script with rclone cloud storage and email notifications
+# Works with any rclone-supported cloud provider
 
-LOGDIR=${LOGDIR:-/var/log/backup}
-mkdir -p "$LOGDIR"
-LOGFILE="$LOGDIR/backup.log"
-exec >> "$LOGFILE" 2>&1
+set -e
 
-timestamp() { date -u +"%Y%m%dT%H%M%SZ"; }
+# Configuration
+BACKUP_DIR="/backups"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+HOSTNAME=$(hostname)
+ARCHIVE_FILENAME="vaultwarden_backup_${HOSTNAME}_${TIMESTAMP}"
+TEMP_ARCHIVE="${BACKUP_DIR}/${ARCHIVE_FILENAME}.tar.gz"
+ENCRYPTED_ARCHIVE="${BACKUP_DIR}/${ARCHIVE_FILENAME}.tar.gz.gpg"
+BACKUP_START_TIME=$(date)
 
-die() {
-  echo "$(timestamp) ERROR: $*" >&2
-  exit 1
-}
+echo "Starting Vaultwarden backup process..."
+echo "Start time: $BACKUP_START_TIME"
 
-info() {
-  echo "$(timestamp) INFO: $*"
-}
+# Create MySQL dump
+echo "Creating database backup..."
+mysqldump \
+    --host=mariadb \
+    --user=root \
+    --password="$MARIADB_ROOT_PASSWORD" \
+    --single-transaction \
+    --routines \
+    --triggers \
+    "$MARIADB_DATABASE" > "${BACKUP_DIR}/database.sql"
 
-# Ensure required env vars
-: "${GPG_PASSPHRASE:?GPG_PASSPHRASE must be set (from settings.env)}"
-: "${BACKUP_EMAIL_RECIPIENT:?BACKUP_EMAIL_RECIPIENT must be set}"
-: "${SMTP_HOST:?SMTP_HOST must be set}"
-: "${SMTP_USER:?SMTP_USER must be set}"
-: "${SMTP_PASSWORD:?SMTP_PASSWORD must be set}"
-: "${SMTP_FROM:?SMTP_FROM must be set}"
+# Create compressed archive
+echo "Creating compressed archive..."
+tar -czf "$TEMP_ARCHIVE" \
+    -C /data . \
+    -C "$BACKUP_DIR" database.sql
 
-BACKUP_DIR=${BACKUP_DIR:-/backups}
-DATA_DIRS=(/data /var/lib/mysql)
-TMPDIR=$(mktemp -d -p /tmp bwbackup.XXXXXX)
-trap 'rm -rf "$TMPDIR"' EXIT
+# Remove temporary database dump
+rm "${BACKUP_DIR}/database.sql"
 
-info "Starting backup for ${APP_DOMAIN:-(unknown)}"
+# Encrypt the archive
+echo "Encrypting backup archive..."
+gpg --batch --yes --cipher-algo AES256 --compress-algo 2 --symmetric \
+    --passphrase "$BACKUP_PASSPHRASE" \
+    --output "$ENCRYPTED_ARCHIVE" \
+    "$TEMP_ARCHIVE"
 
-# Create tarball of data directories (readonly mounts expected)
-TARFILE="$TMPDIR/bitwarden_backup_$(timestamp).tar.gz"
-info "Creating tarball $TARFILE"
-tar -czf "$TARFILE" -C / --warning=no-file-changed "${DATA_DIRS[@]/#/}" || die "tar failed"
+# Remove unencrypted archive
+rm "$TEMP_ARCHIVE"
 
-# Encrypt with GPG symmetric AES256
-ENCRYPTED="$BACKUP_DIR/bitwarden_backup_$(timestamp).tar.gz.gpg"
-info "Encrypting to $ENCRYPTED"
-gpg --batch --yes --passphrase "$GPG_PASSPHRASE" --symmetric --cipher-algo AES256 -o "$ENCRYPTED" "$TARFILE" || die "gpg encryption failed"
+# Get file size for reporting
+BACKUP_SIZE=$(du -h "$ENCRYPTED_ARCHIVE" | cut -f1)
+echo "Encrypted backup created: $ENCRYPTED_ARCHIVE ($BACKUP_SIZE)"
 
-# Set safe permissions
-chmod 600 "$ENCRYPTED"
+# Upload to cloud storage
+echo "Uploading backup to ${RCLONE_REMOTE_NAME}..."
+REMOTE_PATH="${RCLONE_REMOTE_NAME}:${RCLONE_REMOTE_PATH}/${ARCHIVE_FILENAME}.tar.gz.gpg"
+UPLOAD_START_TIME=$(date)
 
-# Rotate local backups: keep last 14 (configurable)
-KEEP=${KEEP:-14}
-info "Rotating backups, keeping last $KEEP"
-ls -1t "$BACKUP_DIR"/bitwarden_backup_*.tar.gz.gpg 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f --
+if rclone copy "$ENCRYPTED_ARCHIVE" "${RCLONE_REMOTE_NAME}:${RCLONE_REMOTE_PATH}/" --progress; then
+    UPLOAD_END_TIME=$(date)
+    echo "✓ Backup successfully uploaded to ${RCLONE_REMOTE_NAME}."
+    UPLOAD_SUCCESS=true
+else
+    UPLOAD_END_TIME=$(date)
+    echo "✗ Failed to upload backup to ${RCLONE_REMOTE_NAME}."
+    UPLOAD_SUCCESS=false
+fi
 
-# --- New Email Section with Attachment ---
-info "Sending backup file via email to $BACKUP_EMAIL_RECIPIENT"
-# Prepare temporary msmtp config. Mutt will use this config file.
-MSMTP_CONFIG="/tmp/msmtp.conf.$$"
-trap 'rm -f "$MSMTP_CONFIG"' EXIT # The existing trap will clean this up
-cat > "$MSMTP_CONFIG" <<EOF
-defaults
-auth on
-tls on
-tls_trust_file /etc/ssl/certs/ca-certificates.crt
-logfile /var/log/backup/msmtp.log
+# Clean up old cloud backups (retention policy)
+if [[ "$UPLOAD_SUCCESS" == true && -n "$BACKUP_RETENTION_DAYS" ]]; then
+    echo "Cleaning up backups older than $BACKUP_RETENTION_DAYS days..."
+    CLEANUP_COUNT=$(rclone delete "${RCLONE_REMOTE_NAME}:${RCLONE_REMOTE_PATH}/" \
+        --min-age "${BACKUP_RETENTION_DAYS}d" \
+        --include "vaultwarden_backup_*.tar.gz.gpg" \
+        --dry-run 2>/dev/null | grep -c "Deleted" || echo "0")
+    
+    rclone delete "${RCLONE_REMOTE_NAME}:${RCLONE_REMOTE_PATH}/" \
+        --min-age "${BACKUP_RETENTION_DAYS}d" \
+        --include "vaultwarden_backup_*.tar.gz.gpg" || echo "Warning: Cleanup failed"
+fi
 
-account default
-host ${SMTP_HOST}
-port 587
-from "${SMTP_FROM}"
-user "${SMTP_USER}"
-passwordeval "echo ${SMTP_PASSWORD}"
-EOF
+# Clean up local backups older than 7 days
+echo "Cleaning up local backups older than 7 days..."
+find "$BACKUP_DIR" -name "vaultwarden_backup_*.tar.gz.gpg" -mtime +7 -delete || true
 
-# Define email subject and body
-SUBJECT="[Backup] Vaultwarden backup for \"${APP_DOMAIN:-(unknown)}\" on $(date -u +'%Y-%m-%d')"
-BODY="Encrypted backup file is attached.\n\nFile: $(basename "$ENCRYPTED")\nTimestamp: $(timestamp)"
+BACKUP_END_TIME=$(date)
 
-# Send email with mutt, using the temporary msmtp config
-# The -a flag attaches the file. The '--' signifies the end of options.
-echo -e "$BODY" | mutt -s "$SUBJECT" \
-  -F "$MSMTP_CONFIG" \
-  -a "$ENCRYPTED" \
-  -- "$BACKUP_EMAIL_RECIPIENT" || info "Warning: mutt reported a failure. Email with attachment may not have been sent."
+# Send comprehensive notification email
+echo "Sending backup completion notification email..."
 
-info "Backup completed successfully: $(basename "$ENCRYPTED")"
-exit 0
+if [[ "$UPLOAD_SUCCESS" == true ]]; then
+    EMAIL_SUBJECT="✅ Vaultwarden Backup Completed Successfully - $(date '+%Y-%m-%d %H:%M')"
+    EMAIL_BODY="Your Vaultwarden backup has completed successfully and has been uploaded to your cloud storage.
+
+📋 BACKUP SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🖥️  Server: $HOSTNAME
+📅 Start Time: $BACKUP_START_TIME
+📅 End Time: $BACKUP_END_TIME
+📦 Backup Size: $BACKUP_SIZE
+🔐 Encryption: GPG AES256
+☁️  Cloud Storage: $RCLONE_REMOTE_NAME
+
+📁 FILE LOCATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📍 Local: $ENCRYPTED_ARCHIVE
+☁️  Remote: $REMOTE_PATH
+
+🧹 MAINTENANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🗑️  Retention Policy: $BACKUP_RETENTION_DAYS days"
+
+    if [[ -n "$CLEANUP_COUNT" && "$CLEANUP_COUNT" -gt 0 ]]; then
+        EMAIL_BODY="$EMAIL_BODY
+🗑️  Old Backups Cleaned: $CLEANUP_COUNT files"
+    fi
+
+    EMAIL_BODY="$EMAIL_BODY
+
+✅ Status: All operations completed successfully.
+🔧 Next Backup: Scheduled for tomorrow night.
+
+This backup is encrypted and ready for restore if needed."
+
+else
+    EMAIL_SUBJECT="❌ Vaultwarden Backup Upload Failed - $(date '+%Y-%m-%d %H:%M')"
+    EMAIL_BODY="Your Vaultwarden backup was created successfully but failed to upload to your cloud storage.
+
+📋 BACKUP SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🖥️  Server: $HOSTNAME
+📅 Start Time: $BACKUP_START_TIME
+📅 End Time: $BACKUP_END_TIME
+📦 Backup Size: $BACKUP_SIZE
+🔐 Encryption: GPG AES256
+
+📁 LOCAL BACKUP AVAILABLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📍 Location: $ENCRYPTED_ARCHIVE
+
+❌ UPLOAD FAILURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+☁️  Target: $RCLONE_REMOTE_NAME
+🕐 Upload Started: $UPLOAD_START_TIME
+🕐 Upload Failed: $UPLOAD_END_TIME
+
+⚠️  REQUIRED ACTION: Please check the backup container logs and verify your cloud storage connection and credentials.
+
+The local backup is secure and available for manual upload if needed."
+fi
+
+# Send the email using msmtp
+{
+    echo "From: ${SMTP_FROM}"
+    echo "To: ${BACKUP_NOTIFICATION_EMAIL}"
+    echo "Subject: ${EMAIL_SUBJECT}"
+    echo "Content-Type: text/plain; charset=UTF-8"
+    echo ""
+    echo "$EMAIL_BODY"
+} | msmtp -t
+
+echo "✅ Backup process completed. Notification email sent to ${BACKUP_NOTIFICATION_EMAIL}"
