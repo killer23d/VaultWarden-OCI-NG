@@ -91,8 +91,8 @@ services:
     cap_add:
       - NET_ADMIN
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=${PUID}
+      - PGID=${PGID}
     healthcheck:
       test: ["CMD-SHELL", "fail2ban-client ping >/dev/null 2>&1 || exit 1"]
       interval: 2m
