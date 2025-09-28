@@ -1,5 +1,4 @@
 
-
 # **Vaultwarden on OCI Ampere A1 Flex (Enhanced for Resilience)**
 
 This guide provides a comprehensive, step-by-step process for deploying a secure, resilient, and fully containerized Vaultwarden stack on an Oracle Cloud Infrastructure (OCI) Ampere A1 Flex virtual machine running Ubuntu.
@@ -75,17 +74,7 @@ pip3 install oci-cli
 
 **Important:** You must **log out and log back in** for the Docker group changes to take effect.
 
-### **C. Configure the OCI CLI**
-
-The OCI CLI needs to be configured to interact with your OCI account. This is a critical step, as it provides the authentication needed to fetch your secrets from OCI Vault.
-
-1. Run the interactive setup tool:  
-   Bash  
-   oci setup config
-
-2. Follow the prompts. You will need your **User, Tenancy, and Region OCIDs** from the OCI console. This process creates a configuration and key file (usually in \~/.oci/) that the startup.sh script relies on to authenticate with OCI.
-
-### **D. Set Up Automated Security Updates & Maintenance**
+### **C. Set Up Automated Security Updates & Maintenance**
 
 To keep the host OS secure and clean, configure automatic updates and maintenance jobs.
 
@@ -93,27 +82,16 @@ To keep the host OS secure and clean, configure automatic updates and maintenanc
    Bash  
    sudo timedatectl set-timezone America/Los\_Angeles
 
-2. **Install the unattended-upgrades package**.  
+2. **Install and Enable Automatic Updates**.  
    Bash  
-   sudo apt-get install \-y unattended-upgrades
-
-3. **Enable Automatic Updates** by running the following command and selecting "Yes" when prompted.  
-   Bash  
+   sudo apt-get install \-y unattended-upgrades  
    sudo dpkg-reconfigure \--priority=low unattended-upgrades
 
-4. **Enable Automatic Reboots** if required by an update. Edit the configuration file:  
-   Bash  
-   sudo nano /etc/apt/apt.conf.d/50unattended-upgrades
-
-   Uncomment and set the following lines to enable a reboot at a specific time (e.g., 02:30):  
-   Unattended-Upgrade::Automatic-Reboot "true";  
-   Unattended-Upgrade::Automatic-Reboot-Time "02:30";
-
-5. **Set up Maintenance Cron Jobs**.  
+3. **Set up Maintenance Cron Jobs**.  
    Bash  
    sudo crontab \-e
 
-   Add the following lines to the file. **Note:** You must replace /path/to/project with the actual path to your project directory.  
+   Add the following lines. **Note:** You must replace /path/to/project with the actual path to your project directory.  
    \# Prune unused Docker resources every Sunday at 2 AM  
    0 2 \* \* 0 /usr/bin/docker system prune \-af
 
@@ -124,17 +102,14 @@ To keep the host OS secure and clean, configure automatic updates and maintenanc
 
 ## **Step 3: Project Setup**
 
-Now, clone the project repository and configure the application settings.
-
 1. **Clone the Repository**.  
    Bash  
    git clone \<URL\_OF\_YOUR\_REPOSITORY\>  
    cd \<REPOSITORY\_DIRECTORY\>
 
 2. Customize settings.env.  
-   Open the settings.env file in a text editor (nano settings.env) and replace all placeholder values. This is the most critical step. You will need to set your domain, generate strong passwords, and provide API keys for push notifications and your DNS provider.  
-3. Set Script Permissions.  
-   Run this command from the root of the project to make the scripts executable:  
+   Open settings.env and replace all placeholder values.  
+3. **Set Script Permissions**.  
    Bash  
    chmod \+x \*.sh caddy/\*.sh backup/\*.sh
 
@@ -142,46 +117,37 @@ Now, clone the project repository and configure the application settings.
 
 ## **Step 4: Secrets Management with OCI Vault**
 
-To improve security, this project stores the settings.env file in OCI Vault instead of leaving it on the disk.
+This step is performed on your **local machine**, not the VM.
 
-1. Run the Interactive Setup Script.  
-   This script will guide you through creating a vault, creating an encryption key, and uploading your settings.env file as a secret.  
+1. **Configure OCI CLI Locally**. If you haven't already, configure the OCI CLI on your local computer by running oci setup config.  
+2. **Run the Interactive Setup Script**. This script will guide you through creating a vault and uploading your settings.env file as a secret.  
    Bash  
    ./oci\_setup.sh
 
-2. **Save the Secret OCID**. At the end of the process, the script will output a **Secret OCID**. Copy this value and save it somewhere safe; you will need it for the next steps.
+3. **Save the Secret OCID**. The script will output a **Secret OCID**. Copy this value; you will need it for the VM.
 
 ---
 
-## **Step 5: Deployment**
+## **Step 5: Authorize the VM with IAM**
 
-You can now start the entire application stack.
+This allows the VM to securely fetch the secret without storing any user credentials.
 
-1. Run the startup.sh Script Manually (for the first time).  
-   Provide the Secret OCID you saved from the previous step as an environment variable:  
-   Bash  
-   OCI\_SECRET\_OCID=\<YOUR\_SECRET\_OCID\_HERE\> ./startup.sh
-
-2. **How it Works**. This command uses two key components:  
-   * The **OCI CLI configuration** (from Step 2C) to authenticate with your account.  
-   * The **Secret OCID** to identify which secret to fetch.
-
-It then pulls your settings into a secure in-memory location and starts all the Docker containers. The in-memory file is deleted when the script exits.
-
-3. **Access Your Instance**. Your Vaultwarden instance should now be live and accessible at the domain you configured.
+1. **Create a Dynamic Group**. In the OCI Console, navigate to **Identity & Security** \> **Dynamic Groups**. Create a new group and add a rule to match your VM's OCID:  
+   * resource.id \= 'ocid1.instance.oc1..xxxxx'  
+2. **Create an IAM Policy**. Go to **Identity & Security** \> **Policies**. Create a policy in the same compartment as your secret with this statement (replace the group name and secret OCID):  
+   * Allow dynamic-group \<YOUR\_GROUP\_NAME\> to read secret-bundles where target.secret.id \= '\<YOUR\_SECRET\_OCID\>'
 
 ---
 
-## **Step 6: Enable Unattended Startup on Reboot**
+## **Step 6: Unattended Deployment**
 
-To ensure your Vaultwarden stack automatically restarts after the VM reboots, you need to create a systemd service. This service will run the startup.sh script automatically, fetching the secrets and starting the containers.
+The final step is to configure the systemd service on the VM to run the startup script on boot.
 
-1. **Create a systemd Service File**.  
+1. **Create a systemd Service File**. On the VM, create the file:  
    Bash  
-   sudo nano /etc/systemd/system/vaultwarden-startup.service
+   sudo nano /etc/systemd/system/vaultwarden.service
 
-2. Paste the following configuration.  
-   You must replace \<YOUR\_USER\>, /path/to/your/project, and \<YOUR\_SECRET\_OCID\_HERE\> with your actual values.  
+2. **Paste the Configuration**. You must replace \<YOUR\_USER\>, /path/to/your/project, and \<YOUR\_SECRET\_OCID\_HERE\> with your actual values.  
    Ini, TOML  
    \[Unit\]  
    Description\=Vaultwarden Startup Service  
@@ -202,21 +168,14 @@ To ensure your Vaultwarden stack automatically restarts after the VM reboots, yo
 
 3. **Enable and Start the Service**.  
    Bash  
-   \# Reload the systemd manager configuration  
-   sudo systemctl daemon-reload
+   sudo systemctl daemon-reload  
+   sudo systemctl enable \--now vaultwarden.service
 
-   \# Enable the service to start automatically on boot  
-   sudo systemctl enable vaultwarden-startup.service
-
-   \# Start the service now to test it  
-   sudo systemctl start vaultwarden-startup.service
-
-4. Verify the Service.  
-   Check that the service is active and running without errors.  
+4. **Verify the Service**.  
    Bash  
-   sudo systemctl status vaultwarden-startup.service
+   sudo systemctl status vaultwarden.service
 
-   Your Vaultwarden stack is now fully resilient and will start automatically on boot.
+   Your Vaultwarden stack is now fully deployed and will start automatically on boot, securely fetching its configuration from OCI Vault every time.
 
 ---
 
