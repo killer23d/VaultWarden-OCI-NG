@@ -51,7 +51,7 @@ gpg --batch --yes --passphrase "$GPG_PASSPHRASE" --symmetric --cipher-algo AES25
 chmod 600 "$ENCRYPTED"
 
 # Rotate local backups: keep last 14 (configurable)
-KEEP=${KEEP:-14} # <-- This value has been changed from 7 to 14
+KEEP=${KEEP:-14}
 info "Rotating backups, keeping last $KEEP"
 ls -1t "$BACKUP_DIR"/bitwarden_backup_*.tar.gz.gpg 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f --
 
