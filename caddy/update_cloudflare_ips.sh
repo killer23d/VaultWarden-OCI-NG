@@ -55,18 +55,33 @@ fi
 
 # --- Trigger Reloads ONLY if changes were made ---
 if [ "$CHANGES_DETECTED" = true ]; then
-  echo "IP lists updated. Reloading services..."
-  if /usr/bin/docker exec bw_caddy caddy reload; then
-    echo "Caddy reloaded successfully."
+  echo "IP lists updated. Reloading services if they are running..."
+
+  # Check if Caddy container is running before reloading
+  if docker ps --format '{{.Names}}' | grep -q "^bw_caddy$"; then
+    if /usr/bin/docker exec bw_caddy caddy reload; then
+      echo "Caddy reloaded successfully."
+    else
+      # Exit with an error only if the reload fails on a running container
+      echo "ERROR: Failed to reload Caddy." >&2; exit 1
+    fi
   else
-    echo "ERROR: Failed to reload Caddy." >&2; exit 1
+    echo "Caddy container is not running, skipping reload. It will load the new IPs on startup."
   fi
-  if /usr/bin/docker exec bw_fail2ban fail2ban-client reload; then
-    echo "Fail2ban reloaded successfully."
+
+  # Check if Fail2ban container is running before reloading
+  if docker ps --format '{{.Names}}' | grep -q "^bw_fail2ban$"; then
+    if /usr/bin/docker exec bw_fail2ban fail2ban-client reload; then
+      echo "Fail2ban reloaded successfully."
+    else
+      # Exit with an error only if the reload fails on a running container
+      echo "ERROR: Failed to reload Fail2ban." >&2; exit 1
+    fi
   else
-    echo "ERROR: Failed to reload Fail2ban." >&2; exit 1
+    echo "Fail2ban container is not running, skipping reload. It will load the new IPs on startup."
   fi
-  echo "Services reloaded."
+  
+  echo "Service reload check complete."
 else
   echo "No changes detected. Services were not reloaded."
 fi
