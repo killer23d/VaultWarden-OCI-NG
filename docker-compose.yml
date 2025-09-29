@@ -1,11 +1,12 @@
 version: "3.8"
 
 services:
+
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
-    user: "1000:1000"
+    user: "${PUID}:${PGID}"
     env_file:
       - ./settings.env
     volumes:
@@ -27,13 +28,8 @@ services:
       - ./settings.env
     volumes:
       - ./data/mariadb:/var/lib/mysql:rw
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MARIADB_DATABASE}
-      MYSQL_USER: ${MARIADB_USER}
-      MYSQL_PASSWORD: ${MARIADB_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MARIADB_ROOT_PASSWORD} >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p${MARIADB_ROOT_PASSWORD} >/dev/null 2>&1 || exit 1"]
       interval: 1m30s
       timeout: 10s
       retries: 5
@@ -63,7 +59,7 @@ services:
     image: caddy:latest
     container_name: bw_caddy
     restart: unless-stopped
-    user: "1000:1000"
+    user: "${PUID}:${PGID}"
     env_file:
       - ./settings.env
     volumes:
@@ -160,9 +156,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE}
-      TZ: ${TZ}
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE}
+      - TZ=${TZ}
     networks:
       - bw_net
 
