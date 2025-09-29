@@ -25,7 +25,7 @@
 
     tls {env.ADMIN_EMAIL}
     log {
-        output file /logs/access.log
+        output file /logs/caddy/access.log
         format single_field common_log
     }
  
