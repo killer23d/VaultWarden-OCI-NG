@@ -3,6 +3,15 @@
 # Enhanced Vaultwarden backup script with rclone cloud storage and email notifications
 # Works with any rclone-supported cloud provider
 
+# New: Add interactive check for manual runs
+if [[ $- == *i* && "$1" != "-n" ]]; then # Check if shell is interactive and no "-n" flag
+    read -p "Are you sure you want to run a manual backup now? (y/N): " choice
+    if [[ ! "$choice" =~ ^[Yy]$ ]]; then
+        echo "Backup cancelled by user."
+        exit 0
+    fi
+fi
+
 set -e
 
 # Configuration
