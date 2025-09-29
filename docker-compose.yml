@@ -13,6 +13,11 @@ services:
       - ./data/bwdata:/data:rw
     networks:
       - bw_net
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
       interval: 1m30s
@@ -76,6 +81,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    depends_on:
+      vaultwarden:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS --max-time 5 https://localhost || curl -fsS --max-time 5 http://localhost || exit 1"]
       interval: 1m
