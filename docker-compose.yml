@@ -103,14 +103,14 @@ services:
   environment:
     - PUID=${PUID}
     - PGID=${PGID}
-    healthcheck:
+  healthcheck:
       test: ["CMD-SHELL", "fail2ban-client ping >/dev/null 2>&1 || exit 1"]
       interval: 2m
       timeout: 10s
       retries: 3
-    networks:
+  networks:
       - bw_net
-    depends_on:
+  depends_on:
       caddy:
         condition: service_started
       vaultwarden:
