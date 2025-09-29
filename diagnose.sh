@@ -1,115 +1,165 @@
-#!/usr/bin/env bash
-# diagnose.sh - A script to troubleshoot the Vaultwarden stack.
+#!/bin/bash
+# diagnose.sh - Comprehensive diagnostic script for Vaultwarden stack
 
 set -euo pipefail
 
-# ANSI color codes
+# Color codes
+RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Source environment variables
-if [[ -f "settings.env" ]]; then
-    source "settings.env"
-else
-    echo -e "${RED}Error: settings.env not found.${NC}"
-    exit 1
-fi
+echo -e "${BLUE}=== Vaultwarden Stack Diagnostics ===${NC}"
+echo "Generated at: $(date)"
+echo "Hostname: $(hostname)"
+echo "Kernel: $(uname -r)"
+echo ""
 
-echo -e "--- Starting Full Stack Diagnostics ---"
+# Function to get container ID dynamically
+get_container_id() {
+    local service_name=$1
+    docker compose ps -q "$service_name" 2>/dev/null || echo ""
+}
 
-# 1. Check Overall Health of All Containers
-echo -e "\n## 1. Checking Container Health..."
-HEALTH_ISSUES=0
-for container in $(docker compose ps -q); do
-  name=$(docker inspect --format '{{.Name}}' "$container" | sed 's/^\///')
-  status=$(docker inspect --format '{{.State.Status}}' "$container")
-  health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no healthcheck{{end}}' "$container")
-
-  printf "%-20s | Status: %-10s | Health: " "$name" "$status"
-  if [[ "$health" == "healthy" ]]; then
-    echo -e "${GREEN}${health}${NC}"
-  elif [[ "$health" == "unhealthy" || "$status" != "running" ]]; then
-    echo -e "${RED}${health}${NC}"
-    HEALTH_ISSUES=$((HEALTH_ISSUES + 1))
-  else
-    echo -e "${YELLOW}${health}${NC}"
-  fi
-done
-
-if [ "$HEALTH_ISSUES" -gt 0 ]; then
-    echo -e "\n${RED}Health issues detected. Please check logs below.${NC}"
-fi
-
-# 2. Display Recent Logs for Each Container
-echo -e "\n## 2. Displaying Last 15 Log Lines for Each Container..."
-for service in $(docker compose ps --services); do
-  echo -e "\n--- Logs for ${YELLOW}$service${NC} ---"
-  docker compose logs --tail="15" "$service" || echo -e "${RED}Could not retrieve logs for $service.${NC}"
-done
-
-# 3. Test Network Connectivity
-echo -e "\n## 3. Testing Network Connectivity..."
-
-# Test Vaultwarden -> MariaDB
-echo -n "Vaultwarden -> MariaDB: "
-if docker compose exec -T "$VAULTWARDEN_CONTAINER" nc -z -w 5 mariadb 3306; then
-  echo -e "${GREEN}SUCCESS${NC}"
-else
-  echo -e "${RED}FAILURE${NC}"
-fi
-
-# Test Vaultwarden -> Redis
-echo -n "Vaultwarden -> Redis: "
-if docker compose exec -T "$VAULTWARDEN_CONTAINER" nc -z -w 5 redis 6379; then
-  echo -e "${GREEN}SUCCESS${NC}"
-else
-  echo -e "${RED}FAILURE${NC}"
-fi
-
-# New: External Connectivity Test
-echo -n "Caddy -> Internet (google.com): "
-if docker compose exec -T "$CADDY_CONTAINER" sh -c "wget -q --spider http://google.com"; then
-  echo -e "${GREEN}SUCCESS${NC}"
-else
-  echo -e "${RED}FAILURE${NC}"
-fi
-
-# 4. Check Fail2ban Status
-echo -e "\n## 4. Checking Fail2ban Status..."
-if docker compose ps -q "$FAIL2BAN_CONTAINER" &> /dev/null; then
-  echo -e "--- Fail2ban Jail Status ---"
-  docker compose exec -T "$FAIL2BAN_CONTAINER" fail2ban-client status
-  echo -e "\n--- Fail2ban Banned IPs ---"
-  docker compose exec -T "$FAIL2BAN_CONTAINER" fail2ban-client status recidive | grep "Banned IP" || true
-else
-    echo -e "${YELLOW}Fail2ban container not running. Skipping check.${NC}"
-fi
-
-# 5. New: Check Volume Permissions
-echo -e "\n## 5. Checking Volume Permissions..."
-OWNER_STRING="${PUID}:${PGID}"
-echo "Checking if data directories are owned by user ${OWNER_STRING}..."
-PATHS_TO_CHECK=("./data/bwdata" "./data/caddy_data")
-PERMISSION_ISSUES=0
-for path in "${PATHS_TO_CHECK[@]}"; do
-    if [ -d "$path" ]; then
-        actual_owner=$(stat -c "%u:%g" "$path")
-        if [ "$actual_owner" == "$OWNER_STRING" ]; then
-            echo -e "  ${GREEN}✓${NC} $path owner is correct ($actual_owner)"
-        else
-            echo -e "  ${RED}✗${NC} $path owner is INCORRECT. Expected ${OWNER_STRING}, found ${actual_owner}"
-            PERMISSION_ISSUES=$((PERMISSION_ISSUES + 1))
-        fi
+# Function to run diagnostic tests
+run_diagnostic() {
+    local test_name=$1
+    local test_command=$2
+    
+    echo -e "${YELLOW}Testing: $test_name${NC}"
+    if eval "$test_command" >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ $test_name: PASS${NC}"
+        return 0
     else
-        echo -e "  ${YELLOW}?${NC} Directory $path not found, skipping check."
+        echo -e "${RED}❌ $test_name: FAIL${NC}"
+        return 1
+    fi
+}
+
+# System Requirements Check
+echo -e "${BLUE}🔍 System Requirements Check:${NC}"
+run_diagnostic "Docker installed" "command -v docker"
+run_diagnostic "Docker Compose installed" "command -v docker compose"
+run_diagnostic "Docker daemon running" "docker info"
+run_diagnostic "Sufficient disk space (>2GB free)" "[ \$(df --output=avail . | tail -1) -gt 2097152 ]"
+run_diagnostic "Sufficient RAM (>1GB free)" "[ \$(free -m | awk '/^Mem:/{print \$7}') -gt 1024 ]"
+
+echo ""
+echo -e "${BLUE}📁 File Structure Check:${NC}"
+run_diagnostic "settings.env exists" "[ -f ./settings.env ]"
+run_diagnostic "docker-compose.yml exists" "[ -f ./docker-compose.yml ]"
+run_diagnostic "Caddyfile exists" "[ -f ./caddy/Caddyfile ]"
+run_diagnostic "Fail2ban config exists" "[ -f ./fail2ban/jail.d/jail.local ]"
+run_diagnostic "Data directory exists" "[ -d ./data ]"
+run_diagnostic "Data directory writable" "[ -w ./data ]"
+
+echo ""
+echo -e "${BLUE}🐳 Container Status Check:${NC}"
+services=("vaultwarden" "mariadb" "redis" "caddy" "fail2ban" "backup" "watchtower")
+
+for service in "${services[@]}"; do
+    container_id=$(get_container_id "$service")
+    if [ -n "$container_id" ]; then
+        status=$(docker inspect --format='{{.State.Status}}' "$container_id" 2>/dev/null || echo "unknown")
+        health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-health-check{{end}}' "$container_id" 2>/dev/null || echo "unknown")
+        
+        case $status in
+            "running")
+                if [ "$health" = "healthy" ]; then
+                    echo -e "${GREEN}✅ $service: Running and Healthy${NC}"
+                elif [ "$health" = "unhealthy" ]; then
+                    echo -e "${RED}❌ $service: Running but Unhealthy${NC}"
+                    echo "   Health check details:"
+                    docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' "$container_id" | tail -3
+                else
+                    echo -e "${YELLOW}⚠️  $service: Running (no health check)${NC}"
+                fi
+                ;;
+            *)
+                echo -e "${RED}❌ $service: $status${NC}"
+                echo "   Recent logs:"
+                docker logs --tail 5 "$container_id" 2>/dev/null || echo "   No logs available"
+                ;;
+        esac
+    else
+        echo -e "${RED}❌ $service: Not found or not running${NC}"
     fi
 done
 
-if [ "$PERMISSION_ISSUES" -gt 0 ]; then
-    echo -e "${RED}Permissions issues detected. Run 'sudo chown -R ${OWNER_STRING} ./data' to fix.${NC}"
+echo ""
+echo -e "${BLUE}🌐 Network Connectivity Check:${NC}"
+
+# Test internal connectivity
+vaultwarden_id=$(get_container_id "vaultwarden")
+if [ -n "$vaultwarden_id" ]; then
+    run_diagnostic "Vaultwarden HTTP endpoint" "docker exec $vaultwarden_id curl -f http://localhost:80/ --max-time 10"
 fi
 
+mariadb_id=$(get_container_id "mariadb")
+if [ -n "$mariadb_id" ]; then
+    run_diagnostic "MariaDB connectivity" "docker exec $mariadb_id mysqladmin ping -h localhost --silent"
+fi
 
-echo -e "\n--- Diagnostics Complete ---"
+redis_id=$(get_container_id "redis")
+if [ -n "$redis_id" ]; then
+    run_diagnostic "Redis connectivity" "docker exec $redis_id redis-cli ping"
+fi
+
+# Test external connectivity
+run_diagnostic "External DNS resolution" "nslookup google.com"
+run_diagnostic "External HTTP connectivity" "curl -f https://httpbin.org/status/200 --max-time 10"
+
+echo ""
+echo -e "${BLUE}🔧 Configuration Validation:${NC}"
+
+# Load settings if available
+if [ -f ./settings.env ]; then
+    source ./settings.env
+    
+    # Validate key settings
+    run_diagnostic "DOMAIN_NAME configured" "[ -n \"\${DOMAIN_NAME:-}\" ]"
+    run_diagnostic "DATABASE_URL configured" "[ -n \"\${DATABASE_URL:-}\" ]"
+    run_diagnostic "ADMIN_TOKEN configured" "[ -n \"\${ADMIN_TOKEN:-}\" ]"
+    
+    # Test domain resolution if configured
+    if [ -n "${DOMAIN_NAME:-}" ]; then
+        run_diagnostic "Domain resolves" "nslookup vault.${DOMAIN_NAME}"
+    fi
+fi
+
+echo ""
+echo -e "${BLUE}📊 Resource Usage:${NC}"
+echo "CPU Usage:"
+top -bn1 | grep "Cpu(s)" || echo "CPU info not available"
+
+echo ""
+echo "Memory Usage:"
+free -h
+
+echo ""
+echo "Disk Usage:"
+df -h ./data/ 2>/dev/null || echo "Data directory not found"
+
+echo ""
+echo -e "${BLUE}📝 Recent Error Logs:${NC}"
+for service in "${services[@]}"; do
+    container_id=$(get_container_id "$service")
+    if [ -n "$container_id" ]; then
+        echo ""
+        echo -e "${YELLOW}--- $service errors ---${NC}"
+        docker logs --tail 20 "$container_id" 2>&1 | grep -i error || echo "No recent errors"
+    fi
+done
+
+echo ""
+echo -e "${BLUE}🔗 Useful Commands:${NC}"
+echo "View all logs:           ./monitor.sh"
+echo "Restart services:        docker compose restart"
+echo "View specific logs:      docker compose logs [service_name]"
+echo "Update configuration:    ./update-settings.sh"
+echo "Manual backup:           docker compose exec backup /backup/backup.sh"
+
+echo ""
+echo -e "${GREEN}Diagnostic complete!${NC}"
+echo "If issues persist, check the logs above and ensure all requirements are met."
