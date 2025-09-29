@@ -85,22 +85,24 @@ services:
       - bw_net
 
   fail2ban:
-    image: lscr.io/linuxserver/fail2ban:latest
-    container_name: bw_fail2ban
-    restart: unless-stopped
-    volumes:
-      - ./fail2ban/jail.local:/config/jail.local:ro
-      - ./fail2ban/filter.d:/config/filter.d:ro
-      - ./caddy/cloudflare_ips.txt:/config/cloudflare_ips.txt:ro
-      - ./data/caddy_logs:/logs/caddy:ro
-      - ./data/bwdata:/logs/vaultwarden:ro
-      - ./data/fail2ban:/config:rw
-      - /var/log:/var/log/host:ro
-    cap_add:
-      - NET_ADMIN
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
+  image: lscr.io/linuxserver/fail2ban:latest
+  container_name: bw_fail2ban
+  restart: unless-stopped
+  env_file:
+    - ./settings.env
+  volumes:
+    - ./fail2ban/jail.local:/config/jail.local:ro
+    - ./fail2ban/filter.d:/config/filter.d:ro
+    - ./caddy/cloudflare_ips.txt:/config/cloudflare_ips.txt:ro
+    - ./data/caddy_logs:/logs/caddy:ro
+    - ./data/bwdata:/logs/vaultwarden:ro
+    - ./data/fail2ban:/config:rw
+    - /var/log:/var/log/host:ro
+  cap_add:
+    - NET_ADMIN
+  environment:
+    - PUID=${PUID}
+    - PGID=${PGID}
     healthcheck:
       test: ["CMD-SHELL", "fail2ban-client ping >/dev/null 2>&1 || exit 1"]
       interval: 2m
