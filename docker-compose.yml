@@ -26,6 +26,11 @@ services:
     user: "999:999"
     env_file:
       - ./settings.env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MARIADB_DATABASE}
+      MYSQL_USER: ${MARIADB_USER}
+      MYSQL_PASSWORD: ${MARIADB_PASSWORD}
     volumes:
       - ./data/mariadb:/var/lib/mysql:rw
     healthcheck:
