@@ -1,0 +1,73 @@
+# fail2ban/jail.d/jail.local
+# A layered and progressive Fail2ban configuration
+
+[DEFAULT]
+# Ignore local networks first, then append Cloudflare IPs from the synced file.
+ignoreip = 127.0.0.1/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+ignoreip = %(ignoreip)s /config/cloudflare_ips.txt
+
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+backend  = auto
+destemail = ${FAIL2BAN_DEST}
+action    = %(action_mwl)s
+
+# --- APPLICATION Jails ---
+[vaultwarden]
+enabled  = true
+filter   = vaultwarden
+port     = http,https
+logpath  = /logs/vaultwarden/vaultwarden.log
+maxretry = 5
+bantime  = 1h
+
+[vaultwarden-admin]
+enabled  = true
+filter   = vaultwarden-admin
+port     = http,https
+logpath  = /logs/vaultwarden/vaultwarden.log
+maxretry = 3
+bantime  = 6h
+
+# --- PROACTIVE SCANNING Jails ---
+[caddy-vulnerability-scan]
+enabled  = true
+filter   = caddy-vulnerability-scan
+port     = http,https
+logpath  = /logs/caddy/access.log
+maxretry = 2
+findtime = 5m
+bantime  = 12h
+
+[caddy-bad-bots]
+enabled  = true
+filter   = caddy-bad-bots
+port     = http,https
+logpath  = /logs/caddy/access.log
+maxretry = 1
+bantime  = 24h
+
+[caddy-404]
+enabled = true
+filter = caddy-404
+port = http,https
+logpath = /logs/caddy/access.log
+maxretry = 10
+bantime  = 12h
+
+# --- SYSTEM Jails ---
+[sshd]
+enabled   = true
+maxretry  = 3
+findtime  = 10m
+bantime   = 6h
+logpath   = /var/log/host/auth.log
+
+# --- RECIDIVISM Jail ---
+[recidive]
+enabled   = true
+logpath   = /config/fail2ban.log
+maxretry  = 3
+findtime  = 1d
+bantime   = 1w
