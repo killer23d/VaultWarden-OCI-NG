@@ -1,41 +1,42 @@
-# backup/Dockerfile
-# Multi-arch (arm64/amd64) friendly. Creates non-root 'backup' user.
-FROM debian:bookworm-slim
+FROM ubuntu:22.04
 
-LABEL maintainer="you@example.com"
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Create backup user
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
+# Install only essential packages for backup operations
+RUN apt-get update && apt-get install -y \
     gpg \
-    gnupg \
     msmtp \
-    mutt \
     ca-certificates \
     curl \
-    jq \
     tar \
     gzip \
-    coreutils \
-    procps \
     cron \
-    dirmngr \
-    gnupg2 \
-    less \
-  && rm -rf /var/lib/apt/lists/* \
-  && groupadd -r backup && useradd -r -g backup -d /backup -s /sbin/nologin backup \
-  && mkdir -p /backup /var/log/backup /etc/msmtp.d \
-  && chown -R backup:backup /backup /var/log/backup /etc/msmtp.d
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/*
 
+# Install rclone
+RUN curl https://rclone.org/install.sh | bash
+
+# Create backup directory
+RUN mkdir -p /backup
+
+# Copy backup scripts
 COPY backup.sh /backup/backup.sh
 COPY restore.sh /backup/restore.sh
-COPY crontab /etc/cron.d/bw_backup
 
-RUN chmod 700 /backup/backup.sh /backup/restore.sh \
-  && chmod 644 /etc/cron.d/bw_backup \
-  && crontab /etc/cron.d/bw_backup \
-  && chmod -R 700 /etc/msmtp.d
+# Make scripts executable
+RUN chmod +x /backup/backup.sh /backup/restore.sh
 
-USER backup
-WORKDIR /backup
+# Setup cron
+COPY crontab /etc/cron.d/backup-crontab
+RUN chmod 0644 /etc/cron.d/backup-crontab
+RUN crontab /etc/cron.d/backup-crontab
+
+# Create log directory
+RUN mkdir -p /var/log/backup
+
+# Set up proper timezone handling
+RUN ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+
+# Start cron in foreground
+CMD ["cron", "-f"]
