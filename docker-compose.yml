@@ -72,7 +72,7 @@ services:
       - ./data/caddy_data:/data
       - ./data/caddy_config:/config
       - ./data/caddy_logs:/logs
-      - ./caddy/cloudflare_ips.caddy:/etc/caddy/cloudflare_ips.caddy:ro
+      - ./caddy/cloudflare_ips.caddy:/etc/caddy/cloudflare_ips.caddy:rw
     ports:
       - "80:80"
       - "443:443"
@@ -85,32 +85,32 @@ services:
       - bw_net
 
   fail2ban:
-  image: lscr.io/linuxserver/fail2ban:latest
-  container_name: bw_fail2ban
-  restart: unless-stopped
-  env_file:
-    - ./settings.env
-  volumes:
-    - ./fail2ban/jail.d/jail.local:/config/jail.local:ro
-    - ./fail2ban/filter.d:/config/filter.d:ro
-    - ./caddy/cloudflare_ips.txt:/config/cloudflare_ips.txt:ro
-    - ./data/caddy_logs:/logs/caddy:ro
-    - ./data/bwdata:/logs/vaultwarden:ro
-    - ./data/fail2ban:/config:rw
-    - /var/log:/var/log/host:ro
-  cap_add:
-    - NET_ADMIN
-  environment:
-    - PUID=${PUID}
-    - PGID=${PGID}
-  healthcheck:
+    image: lscr.io/linuxserver/fail2ban:latest
+    container_name: bw_fail2ban
+    restart: unless-stopped
+    env_file:
+      - ./settings.env
+    volumes:
+      - ./fail2ban/jail.d/jail.local:/config/jail.local:ro
+      - ./fail2ban/filter.d:/config/filter.d:ro
+      - ./caddy/cloudflare_ips.txt:/config/cloudflare_ips.txt:ro
+      - ./data/caddy_logs:/logs/caddy:ro
+      - ./data/bwdata:/logs/vaultwarden:ro
+      - ./data/fail2ban:/config:rw
+      - /var/log:/var/log/host:ro
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+    healthcheck:
       test: ["CMD-SHELL", "fail2ban-client ping >/dev/null 2>&1 || exit 1"]
       interval: 2m
       timeout: 10s
       retries: 3
-  networks:
+    networks:
       - bw_net
-  depends_on:
+    depends_on:
       caddy:
         condition: service_started
       vaultwarden:
@@ -133,33 +133,33 @@ services:
       - bw_net
 
   backup:
-  build:
-    context: ./backup
-    dockerfile: Dockerfile
-  image: bitwarden_backup:latest
-  container_name: bw_backup
-  env_file:
-    - ./settings.env
-  volumes:
-    - ./data/backups:/backups:rw
-    - ./data/backup_logs:/var/log/backup:rw
-    - ./data/bwdata:/data:ro
-    - ./data/mariadb:/var/lib/mysql:ro
-    - ./backup/rclone.conf:/root/.config/rclone/rclone.conf:ro
-  entrypoint: ["/usr/sbin/cron", "-f"]
-  restart: "unless-stopped"
-  networks:
-    - bw_net
-  depends_on:
-    vaultwarden:
-      condition: service_healthy
-    mariadb:
-      condition: service_healthy
-  healthcheck:
-    test: ["CMD-SHELL", "test -w /backups || exit 1"]
-    interval: 30m
-    timeout: 10s
-    retries: 1
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
+    image: bitwarden_backup:latest
+    container_name: bw_backup
+    env_file:
+      - ./settings.env
+    volumes:
+      - ./data/backups:/backups:rw
+      - ./data/backup_logs:/var/log/backup:rw
+      - ./data/bwdata:/data:ro
+      - ./data/mariadb:/var/lib/mysql:ro
+      - ./backup/rclone.conf:/root/.config/rclone/rclone.conf:ro
+    entrypoint: ["/usr/sbin/cron", "-f"]
+    restart: "unless-stopped"
+    networks:
+      - bw_net
+    depends_on:
+      vaultwarden:
+        condition: service_healthy
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -w /backups || exit 1"]
+      interval: 30m
+      timeout: 10s
+      retries: 1
 
   watchtower:
     image: containrrr/watchtower
