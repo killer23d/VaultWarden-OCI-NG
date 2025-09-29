@@ -19,7 +19,20 @@ if [[ ! "$SECRET_OCID" == ocid1.* ]]; then
   exit 1
 fi
 
-echo "Updating existing secret OCID: $SECRET_OCID"
+echo "You are about to update the contents of the existing secret in OCI Vault."
+echo -e "  \033[1;33mSecret OCID:\033[0m $SECRET_OCID"
+echo "This will overwrite the current remote settings with the contents of your local './settings.env' file."
+echo ""
+
+# New: Confirmation Prompt
+read -p "Are you sure you want to proceed? (y/N): " choice
+if [[ ! "$choice" =~ ^[Yy]$ ]]; then
+    echo "Update cancelled by user."
+    exit 0
+fi
+
+echo ""
+echo "Updating existing secret..."
 oci vault secret update --secret-id "$SECRET_OCID" --secret-content "{\"content\":\"$(base64 -w0 settings.env)\"}"
 
 echo "Secret updated successfully."
