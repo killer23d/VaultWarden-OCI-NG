@@ -138,6 +138,7 @@ REQUIRED_FILES=(
     "caddy/Caddyfile"
     "fail2ban/jail.d/jail.local"
     "backup/Dockerfile"
+    "backup/rclone.conf"
     "docker-compose.yml"
 )
 
