@@ -136,7 +136,7 @@ echo "📄 Required Files"
 echo "----------------"
 REQUIRED_FILES=(
     "caddy/Caddyfile"
-    "fail2ban/jail.local"
+    "fail2ban/jail.d/jail.local"
     "backup/Dockerfile"
     "docker-compose.yml"
 )
