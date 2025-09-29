@@ -81,6 +81,15 @@ else
 fi
 
 chmod 600 "$ENVFILE"
+
+# Process Fail2ban Configuration ---
+echo "--> Processing Fail2ban configuration template..."
+# Source the settings file from RAM to make variables available for substitution
+source "$ENVFILE"
+# Use envsubst to replace variables in the template and create the final config
+envsubst < ./fail2ban/jail.d/jail.local.template > ./fail2ban/jail.d/jail.local
+echo "✓ Fail2ban configuration created."
+
 # run compose using env file in RAM
 docker compose --env-file "$ENVFILE" up -d --remove-orphans
 
