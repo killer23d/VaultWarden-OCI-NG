@@ -36,14 +36,46 @@ trap cleanup EXIT
 
 if [ -n "${OCI_SECRET_OCID:-}" ]; then
   echo "Fetching settings from OCI Vault (OCID: ${OCI_SECRET_OCID})..."
-  # requires oci cli authenticated (oci setup config)
-  oci vault secret get --secret-id "${OCI_SECRET_OCID}" --raw-output | jq -r '.data."secret-content".content' | base64 -d > "$ENVFILE"
+  
+  # Validate OCI CLI configuration before attempting to fetch secrets
+  if ! command -v oci &> /dev/null; then
+    echo "ERROR: OCI CLI is not installed or not in PATH"
+    echo "Please install OCI CLI or use local settings.env instead"
+    exit 1
+  fi
+  
+  # Test OCI CLI configuration
+  if ! oci os ns get > /dev/null 2>&1; then
+    echo "ERROR: OCI CLI is not properly configured"
+    echo "Run 'oci setup config' or check your configuration"
+    echo "Alternatively, remove OCI_SECRET_OCID to use local settings.env"
+    exit 1
+  fi
+  
+  # Validate Secret OCID format
+  if [[ ! "${OCI_SECRET_OCID}" =~ ^ocid1\.vaultsecret\. ]]; then
+    echo "ERROR: Invalid Secret OCID format"
+    echo "Expected format: ocid1.vaultsecret.oc1...."
+    exit 1
+  fi
+  
+  # Attempt to fetch the secret
+  if ! oci vault secret get --secret-id "${OCI_SECRET_OCID}" --raw-output | jq -r '.data."secret-content".content' | base64 -d > "$ENVFILE"; then
+    echo "ERROR: Failed to fetch secret from OCI Vault"
+    echo "Please verify the Secret OCID and your permissions"
+    exit 1
+  fi
+  
+  echo "✓ Successfully fetched settings from OCI Vault"
 else
   if [ -f ./settings.env ]; then
     echo "Copying local settings.env into RAM..."
     cp ./settings.env "$ENVFILE"
   else
-    echo "No settings.env found and OCI_SECRET_OCID not set. Aborting."
+    echo "ERROR: No settings.env found and OCI_SECRET_OCID not set"
+    echo "Either:"
+    echo "  1. Copy settings.env.example to settings.env and configure it"
+    echo "  2. Set OCI_SECRET_OCID environment variable to use OCI Vault"
     exit 1
   fi
 fi
@@ -52,6 +84,6 @@ chmod 600 "$ENVFILE"
 # run compose using env file in RAM
 docker compose --env-file "$ENVFILE" up -d --remove-orphans
 
-echo "Containers started. settings.env exists in RAM and will be removed on script exit."
-# Keep script running until user exits — but we will return so trap will delete on exit.
+echo "✓ Containers started successfully"
+echo "✓ Settings file exists in RAM and will be removed on script exit"
 exit 0
