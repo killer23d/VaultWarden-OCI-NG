@@ -133,28 +133,33 @@ services:
       - bw_net
 
   backup:
-    build:
-      context: ./backup
-      dockerfile: Dockerfile
-    image: bitwarden_backup:latest
-    container_name: bw_backup
-    env_file:
-      - ./settings.env
-    volumes:
-      - ./data/backups:/backups:rw
-      - ./data/backup_logs:/var/log/backup:rw
-      - ./data/bwdata:/data:ro
-      - ./data/mariadb:/var/lib/mysql:ro
-      - ./backup/rclone.conf:/root/.config/rclone/rclone.conf:ro
-    entrypoint: ["/usr/sbin/cron", "-f"]
-    restart: "unless-stopped"
-    networks:
-      - bw_net
-    healthcheck:
-      test: ["CMD-SHELL", "test -w /backups || exit 1"]
-      interval: 30m
-      timeout: 10s
-      retries: 1
+  build:
+    context: ./backup
+    dockerfile: Dockerfile
+  image: bitwarden_backup:latest
+  container_name: bw_backup
+  env_file:
+    - ./settings.env
+  volumes:
+    - ./data/backups:/backups:rw
+    - ./data/backup_logs:/var/log/backup:rw
+    - ./data/bwdata:/data:ro
+    - ./data/mariadb:/var/lib/mysql:ro
+    - ./backup/rclone.conf:/root/.config/rclone/rclone.conf:ro
+  entrypoint: ["/usr/sbin/cron", "-f"]
+  restart: "unless-stopped"
+  networks:
+    - bw_net
+  depends_on:
+    vaultwarden:
+      condition: service_healthy
+    mariadb:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD-SHELL", "test -w /backups || exit 1"]
+    interval: 30m
+    timeout: 10s
+    retries: 1
 
   watchtower:
     image: containrrr/watchtower
