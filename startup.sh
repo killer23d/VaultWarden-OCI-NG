@@ -82,7 +82,7 @@ fi
 
 chmod 600 "$ENVFILE"
 
-# Process Fail2ban Configuration ---
+# Process Fail2ban Configuration BEFORE starting containers ---
 echo "--> Processing Fail2ban configuration template..."
 # Source the settings file from RAM to make variables available for substitution
 source "$ENVFILE"
