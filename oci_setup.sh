@@ -173,3 +173,27 @@ log_output() {
   echo "---------------------------------" >> "$log_file"
   echo "✓ All details saved to $log_file"
 }
+
+# --- Main Execution ---
+main() {
+    check_and_setup_cli
+    select_compartment
+    select_vault
+    select_key
+    manage_secret
+    log_output
+
+    # New: Final Console Summary
+    echo ""
+    echo -e "\033[0;32m--- OCI Vault Setup Complete ---\033[0m"
+    echo "Configuration has been saved to the log file."
+    echo "Here are your new resource identifiers:"
+    echo -e "  \033[1;33mCompartment OCID:\033[0m $COMPARTMENT_OCID"
+    echo -e "  \033[1;33mVault OCID:      \033[0m $VAULT_OCID"
+    echo -e "  \033[1;33mKey OCID:        \033[0m $KEY_OCID"
+    echo -e "  \033[1;33mSecret Name:     \033[0m $SECRET_NAME"
+    echo -e "  \033[1;33mSecret OCID:     \033[0m $SECRET_OCID"
+    echo "---------------------------------"
+}
+
+main "$@"
