@@ -1,0 +1,23 @@
+# .gitignore
+
+# Ignore the main environment file which contains all secrets.
+# This is the most critical file to ignore.
+settings.env
+
+# Ignore the rclone configuration file, as it contains
+# API keys and secrets for your cloud storage provider.
+backup/rclone.conf
+
+# Ignore the generated fail2ban configuration. This file is created
+# by the startup.sh script from the .template file and will
+# contain your email address.
+fail2ban/jail.d/jail.local
+
+# Ignore temporary directories created during the restore process.
+bwrestore.*
+
+# Ignore log files that might be generated in the project directory.
+*.log
+
+# Ignore the OCI setup log file which contains OCIDs.
+oci_vault_setup_*.log
