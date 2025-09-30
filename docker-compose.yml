@@ -19,22 +19,32 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/alive || exit 1"]
-      interval: 2m
-      timeout: 10s
+      interval: 3m
+      timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 768M
+          cpus: '0.5'
         reservations:
-          memory: 256M
+          memory: 384M
+          cpus: '0.25'
     environment:
       - DATABASE_URL=mysql://${MARIADB_USER}:${MARIADB_PASSWORD}@bw_mariadb:3306/${MARIADB_DATABASE}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@bw_redis:6379
+      - ROCKET_WORKERS=${VAULTWARDEN_WORKERS:-2}
+      - DATABASE_MAX_CONNS=${DATABASE_MAX_CONNECTIONS:-15}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+        labels: "service=vaultwarden"
 
   bw_mariadb:
-    image: mariadb:latest
+    image: mariadb:11-jammy
     container_name: bw_mariadb
     restart: unless-stopped
     user: "999:999"  # Security separation - database user
@@ -45,25 +55,49 @@ services:
       MYSQL_DATABASE: ${MARIADB_DATABASE}
       MYSQL_USER: ${MARIADB_USER}
       MYSQL_PASSWORD: ${MARIADB_PASSWORD}
+      # Performance optimizations for OCI A1 Flex
+      MYSQL_INITDB_SKIP_TZINFO: 1
     volumes:
       - ./data/mariadb:/var/lib/mysql:rw
+      - ./config/mariadb/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=128M
+      --innodb-flush-log-at-trx-commit=2
+      --innodb-flush-method=O_DIRECT
+      --query-cache-size=0
+      --query-cache-type=0
+      --max-connections=${DATABASE_MAX_CONNECTIONS:-15}
+      --thread-cache-size=8
+      --table-open-cache=64
+      --key-buffer-size=32M
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u${MARIADB_USER} -p${MARIADB_PASSWORD} --silent || exit 1"]
-      interval: 2m
-      timeout: 10s
+      interval: 5m
+      timeout: 15s
       retries: 5
-      start_period: 60s
+      start_period: 120s
     networks:
       - bw_net
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 1.5G
+          cpus: '0.5'
         reservations:
           memory: 512M
+          cpus: '0.25'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+        labels: "service=mariadb"
 
   bw_redis:
-    image: redis:latest
+    image: redis:7-alpine
     container_name: bw_redis
     restart: unless-stopped
     user: "999:999"  # Security separation - cache user
@@ -71,24 +105,33 @@ services:
       - ./settings.env
     volumes:
       - ./data/redis:/data:rw
-    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+      - ./config/redis/redis.conf:/etc/redis/redis.conf:ro
+    command: ["redis-server", "/etc/redis/redis.conf"]
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 1m
-      timeout: 5s
+      interval: 2m
+      timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
     networks:
       - bw_net
     deploy:
       resources:
         limits:
           memory: 256M
+          cpus: '0.25'
         reservations:
           memory: 128M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "25m"
+        max-file: "2"
+        labels: "service=redis"
 
   bw_caddy:
-    image: caddy:latest
+    image: caddy:2-alpine
     container_name: bw_caddy
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
@@ -107,19 +150,27 @@ services:
       vaultwarden:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS --max-time 5 https://localhost/health || curl -fsS --max-time 5 http://localhost/health || exit 1"]
-      interval: 2m
-      timeout: 10s
+      test: ["CMD-SHELL", "caddy validate --config /etc/caddy/Caddyfile || exit 1"]
+      interval: 5m
+      timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 45s
     networks:
       - bw_net
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 256M
+          cpus: '0.25'
         reservations:
-          memory: 64M
+          memory: 128M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+        labels: "service=caddy"
 
   bw_fail2ban:
     image: lscr.io/linuxserver/fail2ban:latest
@@ -140,12 +191,13 @@ services:
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
+      - VERBOSITY=-vv
     healthcheck:
       test: ["CMD-SHELL", "fail2ban-client ping >/dev/null 2>&1 || exit 1"]
-      interval: 5m
-      timeout: 10s
+      interval: 10m
+      timeout: 15s
       retries: 3
-      start_period: 60s
+      start_period: 90s
     networks:
       - bw_net
     depends_on:
@@ -157,8 +209,16 @@ services:
       resources:
         limits:
           memory: 128M
+          cpus: '0.25'
         reservations:
           memory: 64M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+        labels: "service=fail2ban"
 
   bw_ddclient:
     image: lscr.io/linuxserver/ddclient:latest
@@ -169,19 +229,27 @@ services:
     volumes:
       - ./ddclient:/config:rw
     healthcheck:
-      test: ["CMD-SHELL", "ddclient -query | grep -q 'address' || exit 1"]
-      interval: 10m
+      test: ["CMD-SHELL", "pgrep -f ddclient >/dev/null || exit 1"]
+      interval: 30m
       timeout: 15s
       retries: 2
-      start_period: 30s
+      start_period: 60s
     networks:
       - bw_net
     deploy:
       resources:
         limits:
           memory: 64M
+          cpus: '0.1'
         reservations:
           memory: 32M
+          cpus: '0.05'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "25m"
+        max-file: "2"
+        labels: "service=ddclient"
 
   bw_backup:
     build:
@@ -207,22 +275,30 @@ services:
       bw_mariadb:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "test -w /backups && pgrep cron >/dev/null || exit 1"]
-      interval: 30m
-      timeout: 10s
+      test: ["CMD-SHELL", "pgrep cron >/dev/null && test -w /backups || exit 1"]
+      interval: 60m
+      timeout: 15s
       retries: 2
-      start_period: 60s
+      start_period: 120s
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
+          cpus: '0.5'
         reservations:
-          memory: 128M
+          memory: 256M
+          cpus: '0.25'
     profiles:
       - backup
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+        labels: "service=backup"
 
   bw_watchtower:
-    image: containrrr/watchtower
+    image: containrrr/watchtower:latest
     restart: unless-stopped
     container_name: bw_watchtower
     volumes:
@@ -232,16 +308,57 @@ services:
       - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE:-0 0 3 * * 0}
       - TZ=${TZ:-UTC}
       - WATCHTOWER_NOTIFICATIONS_LEVEL=info
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - WATCHTOWER_REVIVE_STOPPED=false
     networks:
       - bw_net
     deploy:
       resources:
         limits:
-          memory: 64M
+          memory: 128M
+          cpus: '0.25'
         reservations:
+          memory: 64M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "25m"
+        max-file: "2"
+        labels: "service=watchtower"
+
+  # Log management service
+  bw_logrotate:
+    image: alpine:latest
+    container_name: bw_logrotate
+    restart: unless-stopped
+    volumes:
+      - ./data/caddy_logs:/var/log/caddy:rw
+      - ./data/backup_logs:/var/log/backup:rw
+      - ./config/logrotate:/etc/logrotate.d:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:rw
+    command: >
+      sh -c "
+      echo '0 2 * * * /usr/sbin/logrotate -v /etc/logrotate.d/vaultwarden-logs 2>&1' > /var/spool/cron/crontabs/root &&
+      crond -f -l 8"
+    deploy:
+      resources:
+        limits:
           memory: 32M
+          cpus: '0.1'
+        reservations:
+          memory: 16M
+          cpus: '0.05'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
 
 networks:
   bw_net:
     driver: bridge
     name: vaultwarden_network
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
