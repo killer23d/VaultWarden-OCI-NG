@@ -29,6 +29,10 @@ bwrestore.*
 oci_vault_setup_*.log
 # Backup logs that might contain sensitive information
 backup_*.log
+# Performance and benchmark reports
+benchmarks/
+performance_report_*.txt
+performance_report_*.html
 
 # === DEVELOPMENT AND IDE FILES ===
 # Common editor and IDE files
