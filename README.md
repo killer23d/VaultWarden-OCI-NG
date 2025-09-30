@@ -5,213 +5,518 @@ This project provides a comprehensive, secure, and automated setup for self-host
 
 The stack is designed with a security-first approach and includes the following components:
 
-* **Vaultwarden**: The core password manager application.  
-* **MariaDB**: A robust database for data persistence.  
-* **Redis**: High-performance caching to speed up the application.  
-* **Caddy**: A modern, automated reverse proxy with automatic HTTPS.  
-* **Fail2ban**: Proactive security against brute-force attacks with custom rules for Vaultwarden.  
-* **Automated Backups**: Daily encrypted backups to cloud storage using rclone, with email notifications.  
-* **Automated Updates**: Watchtower keeps your application containers up-to-date.  
-* **Advanced Management Scripts**: A suite of scripts for easy setup, validation, monitoring, and troubleshooting.
+* **Vaultwarden**: The core password manager application.
+* **MariaDB**: A robust database for data persistence.
+* **Redis**: High-performance caching to speed up the application.
+* **Caddy**: A modern, automated reverse proxy with automatic HTTPS.
+* **Fail2ban**: Proactive security against brute-force attacks with custom rules for Vaultwarden.
+* **Automated Backups**: Daily encrypted backups to cloud storage using rclone.
+* **Automated Updates**: Watchtower keeps your application containers up-to-date.
+* **Management Scripts**: A suite of scripts for easy setup, monitoring, and troubleshooting.
 
-## **⚠️ Important Configuration Notice**
-
-This project requires manual configuration before its first use. It will not work by simply cloning the repository and running it. You must create and modify several key files which contain your specific domain information and secrets.
-
-The most critical files that you **must** create or configure are:
-
-* settings.env: This is the main configuration file where you will set your domain, passwords, and API keys. You must create it by copying settings.env.example and filling in all the required values.  
-* backup/rclone.conf: This file is required for cloud backups to function. You must generate it by running the rclone config command and copying the resulting configuration file to this location.  
-* fail2ban/jail.d/jail.local: This file is **generated automatically** by the startup.sh script from the jail.local.template. You do not need to create it, but its contents depend on the variables you set in settings.env.
-
-Please follow the **Setup Instructions** below carefully to ensure all necessary files are configured correctly.
 
 ## **System Requirements**
 
 ### **Hardware Requirements**
- 
-* **Oracle A1 Flex**: 1 OCPUs, 6GB RAM (free tier)
+
+* **Minimum**: 2 vCPUs, 4GB RAM, 20GB disk space
+* **Recommended**: 4 vCPUs, 6GB RAM, 50GB disk space
+* **Oracle A1 Flex**: 1 OCPU ARM64, 6GB RAM (free tier) - excellent performance
+
 
 ### **Software Prerequisites**
 
-* **Operating System**: Ubuntu 22.04 Minimal LTS (recommended) or similar Linux distribution  
-* **Docker**: Version 20.10+  
-* **Docker Compose**: Version 2.0+  
-* **Domain name** you own with DNS management access  
+* **Operating System**: Ubuntu 22.04 LTS (recommended) or similar Linux distribution
+* **Docker**: Version 20.10+
+* **Docker Compose**: Version 2.0+
+* **Domain name** you own with DNS management access
 * **Cloudflare account** for DNS management (recommended for DDoS protection)
+
 
 ### **Service Requirements**
 
-* **SMTP provider** (MailerSend, SendGrid, etc.) for transactional emails  
-* **Cloud storage** compatible with rclone (Backblaze B2, Google Drive, AWS S3, etc.)  
+* **SMTP provider** (MailerSend, SendGrid, etc.) for transactional emails
+* **Cloud storage** compatible with rclone (Backblaze B2, Google Drive, AWS S3, etc.)
 * **SSL certificate** (automatically managed by Caddy)
+
 
 ## **Setup Instructions**
 
-### **1\. Clone the Repository**
+### **1. Clone the Repository**
 
-Bash
-
-git clone https://github.com/killer23d/VaultWarden-OCI.git  
+```
+git clone https://github.com/killer23d/VaultWarden-OCI.git
 cd VaultWarden-OCI
+```
 
-### **2\. Configure Your Environment**
 
-Copy the example configuration and customize it. This file contains all your secrets, so ensure it is protected.
+### **2. Configure Your Environment**
 
-Bash
+Copy the example configuration and customize it:
 
-cp settings.env.example settings.env  
+```
+cp settings.env.example settings.env
 nano settings.env
+```
 
 **Critical Configuration Items:**
 
-* DOMAIN\_NAME: Your root domain (e.g., example.com)  
-* **Strong Passwords**: Generate secure passwords for all database and application secrets  
-* SMTP\_HOST, SMTP\_USERNAME, SMTP\_PASSWORD: Configure your email provider credentials  
-* BACKUP\_REMOTE: Set up rclone remote name for cloud storage  
-* TZ: Set your local timezone (e.g., America/Los\_Angeles)  
-* ALERT\_EMAIL: Set the email address for critical alerts like disk space warnings
+* **DOMAIN_NAME**: Your root domain (e.g., example.com)
+* **APP_DOMAIN**: Your vault subdomain (e.g., vault.example.com)
+* **Strong Passwords**: Generate secure passwords for all database and application secrets
+* **SMTP Settings**: Configure your email provider credentials
+* **Cloud Storage**: Set up rclone remote name and backup path
+* **Timezone**: Set your local timezone (e.g., America/Los_Angeles)
 
 **Generate Secure Passwords:**
 
-Bash
+```
+# Generate strong passwords
+openssl rand -base64 32  # For MARIADB_ROOT_PASSWORD
+openssl rand -base64 32  # For MARIADB_PASSWORD  
+openssl rand -base64 32  # For ADMIN_TOKEN
+openssl rand -base64 32  # For REDIS_PASSWORD
+```
 
-\# Generate strong, unique passwords for each secret  
-openssl rand \-base64 32 
 
-### **3\. Configure rclone for Backups**
+### **3. Configure rclone for Backups**
 
 Set up cloud storage for automated backups:
 
-1. **Install rclone locally** (this is temporary for setup):  
-   Bash  
-   curl https://rclone.org/install.sh | sudo bash
+1. **Install rclone locally** (temporary):
 
-2. **Configure your cloud provider**:  
-   Bash  
-   rclone config
+```
+curl https://rclone.org/install.sh | sudo bash
+```
 
-   Follow the prompts for your cloud storage provider (e.g., Backblaze B2, Google Drive). Give your remote a name (e.g., b2-backups).  
-3. **Copy configuration to project**:  
-   Bash  
-   cp \~/.config/rclone/rclone.conf ./backup/rclone.conf
+2. **Configure your cloud provider**:
 
-4. **Test the configuration** (replace your-remote-name with the name you chose):  
-   Bash  
-   rclone lsd your-remote-name:
+```
+rclone config
+```
 
-### **4\. Bitwarden Push Notifications (Optional)**
+Follow the prompts for your cloud storage provider (Backblaze B2, Google Drive, etc.)
+3. **Copy configuration to project**:
+
+```
+cp ~/.config/rclone/rclone.conf ./backup/rclone.conf
+```
+
+4. **Test the configuration**:
+
+```
+rclone lsd your-remote-name:
+```
+
+
+### **4. Bitwarden Push Notifications (Optional)**
 
 For mobile app push notifications:
 
-1. Visit the Bitwarden Hosting Portal at https://bitwarden.com/host/  
-2. Create an installation and copy the **Installation ID** and **Key** to your settings.env file.
+1. Visit the Bitwarden Hosting Portal at https://bitwarden.com/host/
+2. Create an installation
+3. Copy the Installation ID and Key to your settings.env:
 
-### **5\. (Optional) Configure OCI Vault for Secrets**
+```
+PUSH_INSTALLATION_ID=your-installation-id
+PUSH_INSTALLATION_KEY=your-installation-key
+```
 
-For enhanced security, you can store your settings.env file in OCI's Vault:
 
-Bash
+### **5. (Optional) Configure OCI Vault for Secrets**
 
-\# Ensure OCI CLI is installed and configured, then run the setup script.  
-./oci\_setup.sh
+For enhanced security, store your settings in OCI's Vault:
 
-The script will guide you through creating vault resources and uploading your settings file. To use the secret from OCI Vault instead of a local file, export the secret's OCID before running startup.sh:
+```
+# Ensure OCI CLI is installed and configured
+./oci_setup.sh
+```
 
-Bash
+The script will guide you through creating vault resources and uploading your settings.env file.
 
-export OCI\_SECRET\_OCID=your-secret-ocid  
+To use OCI Vault:
+
+```
+export OCI_SECRET_OCID=your-secret-ocid
 ./startup.sh
+```
 
-### **6\. Validate and Launch**
 
-1. **Make scripts executable**:  
-   Bash  
-   chmod \+x \*.sh caddy/\*.sh backup/\*.sh
+### **6. Set Up Weekly Cloudflare IP Updates**
 
-2. Validate configuration:  
-   This script checks for common errors in your setup before you launch.  
-   Bash  
-   ./validate-config.sh
+While Cloudflare IPs are updated automatically at startup, setting up a weekly cron job ensures your security rules stay current even between restarts:
 
-3. **Set correct permissions for data directories**:  
-   Bash  
-   sudo chown \-R 1000:1000 ./data
+```
+# Make the update script executable
+chmod +x ./caddy/update_cloudflare_ips.sh
 
-4. **Launch the stack**:  
-   Bash  
-   ./startup.sh
+# Add to your user's crontab (replace /path/to with actual path)
+(crontab -l 2>/dev/null; echo "0 2 * * 0 /path/to/VaultWarden-OCI/caddy/update_cloudflare_ips.sh") | crontab -
+```
 
-Your Vaultwarden instance will be accessible at https://vault.your-domain.com.
+**Note**: Replace `/path/to/VaultWarden-OCI` with the actual full path to your project directory.
+
+### **7. Validate and Launch**
+
+```
+# Make scripts executable
+chmod +x *.sh caddy/*.sh backup/*.sh
+
+# Validate configuration
+./validate-config.sh
+
+# Set correct permissions for data directories
+sudo chown -R 1000:1000 ./data
+
+# Launch the stack
+./startup.sh
+```
+
+Your Vaultwarden instance will be accessible at `https://vault.your-domain.com`
 
 ## **Usage and Management Scripts**
 
-This project includes a powerful suite of scripts for easy management and troubleshooting.
-
 | Script | Purpose |
-| :---- | :---- |
-| startup.sh | Securely starts the Docker stack. It loads the settings.env file into RAM for enhanced security and generates the fail2ban config from a template. |
-| monitor.sh | Provides a real-time, color-coded dashboard of container status, health, resource usage (CPU, RAM, Network), and recent logs for all running services. |
-| diagnose.sh | A comprehensive troubleshooting tool. It checks system requirements, file permissions, container health, network connectivity, and configuration, providing detailed error logs. |
-| validate-config.sh | A pre-flight check for your configuration. It validates file existence, settings.env variables, docker-compose.yml syntax, and password strength. |
-| check-disk-space.sh | Monitors disk usage of the data directory. If the threshold is exceeded, it **sends an email alert**, identifies the largest folders, and suggests cleanup actions. |
-| update-settings.sh | Safely updates your environment variables if you are using OCI Vault for secret management. |
+| :-- | :-- |
+| startup.sh | Securely starts the Docker stack with RAM-based env loading |
+| monitor.sh | Shows container status, resource usage, and recent logs |
+| diagnose.sh | Comprehensive troubleshooting and connectivity tests |
+| validate-config.sh | Validates configuration files and checks for common issues |
+| check-disk-space.sh | Monitors disk usage and sends alerts |
+| update-settings.sh | Safely updates environment variables |
 
 ## **Post-Setup and Maintenance**
 
 ### **Automatic Operations**
 
-* **Updates**: Watchtower checks for new container versions every Sunday at 3 AM.  
-* **Backups**: Encrypted backups are created daily at 3 AM UTC and uploaded to your cloud storage.  
-* **IP Updates**: Cloudflare IP ranges are updated automatically by startup.sh to ensure the firewall is always current.  
-* **Security**: Fail2ban actively monitors logs and blocks suspicious IP addresses.
+* **Updates**: Watchtower checks for new container versions every Sunday at 3 AM
+* **Backups**: Encrypted backups created daily at 3 AM UTC and uploaded to cloud storage
+* **IP Updates**: Cloudflare IP ranges updated automatically before startup
+* **Weekly IP Refresh**: Cloudflare IPs updated every Sunday at 2 AM (if cron job configured)
+* **Security**: Fail2ban monitors and blocks suspicious activities
+
 
 ### **Manual Operations**
 
-Bash
-
-\# View the real-time status dashboard  
+```
+# View container status and logs
 ./monitor.sh
 
-\# Run a deep diagnostic check if you suspect issues  
+# Run comprehensive diagnostics
 ./diagnose.sh
 
-\# Run a manual backup (with confirmation prompt)  
+# Manual backup (with confirmation)
 docker compose exec backup /backup/backup.sh
 
-\# Manually update Cloudflare IP lists  
-./caddy/update\_cloudflare\_ips.sh
+# Manual Cloudflare IP update
+./caddy/update_cloudflare_ips.sh
+```
+
+
+### **Cloudflare IP Management**
+
+Your setup includes automatic Cloudflare IP range updates:
+
+1. **At Startup**: IPs are refreshed every time you run `./startup.sh`
+2. **Weekly Schedule**: If configured, IPs update every Sunday at 2 AM
+3. **Manual Updates**: Run `./caddy/update_cloudflare_ips.sh` anytime
+
+**Why weekly updates?** While Cloudflare rarely changes IP ranges (typically 1-2 times per year), the weekly schedule ensures your security rules stay current without requiring service restarts.
+
+**Verify cron job status:**
+
+```
+# Check if cron job is installed
+crontab -l | grep cloudflare
+
+# Check cron logs
+sudo tail -f /var/log/cron
+```
+
 
 ## **Backup and Restore**
 
+### **Backup System**
+
+* **Schedule**: Daily at 3 AM UTC via cron
+* **Encryption**: GPG with AES256 cipher
+* **Storage**: Local and cloud via rclone
+* **Retention**: Configurable (default 30 days)
+* **Notifications**: Email alerts on success/failure
+
+
 ### **Restore Process**
 
-**WARNING: Critical**: Your backups are encrypted with BACKUP\_PASSPHRASE. **Store this passphrase securely**. Without it, your backups are unrecoverable.
+**⚠️ Critical**: Your backups are encrypted with `BACKUP_PASSPHRASE`. **Store this securely** - lost passphrases mean unrecoverable backups.
 
-1. **Stop services**:  
-   Bash  
-   docker compose down
+```
+# Stop services
+docker compose down
 
-2. **Set your backup passphrase**:  
-   Bash  
-   export GPG\_PASSPHRASE='your-very-strong-backup-passphrase'
+# Set your backup passphrase
+export GPG_PASSPHRASE='your-strong-backup-passphrase'
 
-3. Run interactive restore:  
-   The script will find available backups and let you choose which one to restore.  
-   Bash  
-   ./backup/restore.sh
+# Run interactive restore
+./backup/restore.sh
 
-4. **Restart services and verify**:  
-   Bash  
-   ./startup.sh  
-   ./diagnose.sh
+# Restart services and verify
+./startup.sh
+./diagnose.sh
+```
+
+
+## **Troubleshooting**
+
+### **Common Issues**
+
+| Issue | Solution |
+| :-- | :-- |
+| Container won't start | Check `./diagnose.sh` for detailed analysis |
+| Can't access web interface | Verify DNS pointing to server IP |
+| Email not working | Check SMTP credentials in settings.env |
+| Backup failures | Verify rclone configuration and cloud credentials |
+| Permission errors | Run `sudo chown -R 1000:1000 ./data` |
+| Cloudflare IP issues | Run `./caddy/update_cloudflare_ips.sh` manually |
+
+### **Getting Help**
+
+1. **Run diagnostics**: `./diagnose.sh`
+2. **Check logs**: `./monitor.sh`
+3. **Validate config**: `./validate-config.sh`
+4. **Review documentation**: All scripts have built-in help
+
+### **Log Locations**
+
+```
+# Container logs
+docker compose logs service-name
+
+# Application logs  
+./data/caddy_logs/       # Caddy access logs
+./data/backup_logs/      # Backup operation logs
+./data/fail2ban/         # Security logs
+```
+
+
+## **Security Features**
+
+* **Automatic HTTPS** with Let's Encrypt certificates
+* **Security headers** (HSTS, CSP, X-Frame-Options)
+* **Fail2ban protection** against brute force attacks
+* **Cloudflare integration** for DDoS protection with auto-updating IP ranges
+* **Encrypted backups** with strong cipher suites
+* **Network isolation** via Docker bridge networks
+* **Non-root containers** where possible
+* **Secret management** via OCI Vault integration
+
+
+## **Performance Optimization**
+
+The configuration is optimized for OCI A1 Flex ARM64 systems:
+
+* **Database connection pooling**: 12 connections (ARM64 optimized)
+* **Redis caching**: 25 max connections
+* **Vaultwarden workers**: 2 processes (efficient for ARM64)
+* **Automatic cleanup**: Old logs and backups
+
+For different hardware, adjust these values in settings.env:
+
+```
+VAULTWARDEN_WORKERS=2          # Adjust based on CPU cores
+DATABASE_POOL_SIZE=12          # Adjust based on RAM
+REDIS_MAX_CONNECTIONS=25       # Adjust based on usage
+```
+
+
+## **Advanced Configuration**
+
+### **Custom Domain Setup**
+
+1. Point your domain's A record to your server's IP
+2. Configure Cloudflare DNS (recommended)
+3. Update DOMAIN_NAME and APP_DOMAIN in settings.env
+4. Restart with ./startup.sh
+
+### **Email Provider Setup**
+
+**MailerSend Example:**
+
+```
+SMTP_HOST=smtp.mailersend.net
+SMTP_PORT=587
+SMTP_USERNAME=MS_your_token_here
+SMTP_PASSWORD=MS_your_token_here
+```
+
+**SendGrid Example:**
+
+```
+SMTP_HOST=smtp.sendgrid.net
+SMTP_PORT=587
+SMTP_USERNAME=apikey
+SMTP_PASSWORD=your_sendgrid_api_key
+```
+
+
+### **Cloud Storage Setup**
+
+**Backblaze B2 Example:**
+
+- Remote name: b2remote
+- Remote path: vaultwarden-backups
+
+**Google Drive Example:**
+
+- Remote name: gdrive
+- Remote path: Backups/VaultWarden
+
+
+### **Firewall Configuration**
+
+```
+# UFW example
+sudo ufw allow 22/tcp     # SSH
+sudo ufw allow 80/tcp     # HTTP (redirects to HTTPS)
+sudo ufw allow 443/tcp    # HTTPS
+sudo ufw enable
+```
+
+
+### **Scheduled Maintenance Tasks**
+
+Your setup includes several automated maintenance tasks:
+
+**Weekly Tasks (Sundays at 2-3 AM):**
+
+- 2:00 AM - Cloudflare IP range updates
+- 3:00 AM - Container updates (Watchtower)
+
+**Daily Tasks (3 AM UTC):**
+
+- Database and file backups
+- Log rotation (if configured)
+
+**Customizing Schedules:**
+
+```
+# Modify watchtower schedule
+WATCHTOWER_SCHEDULE=0 0 3 * * 0  # 3 AM every Sunday
+
+# Modify backup schedule in backup/crontab
+0 3 * * * /backup/backup.sh  # Daily at 3 AM
+
+# View all scheduled tasks
+crontab -l
+```
+
 
 ## **Monitoring and Alerts**
 
-This stack is designed for proactive monitoring.
+### **Built-in Monitoring**
 
-* **Container Health Checks**: Every service in the docker-compose.yml has a health check to ensure it's running correctly.  
-* **Disk Space Monitoring**: The check-disk-space.sh script can be run via a cron job to automate disk usage monitoring and receive email alerts.  
-* **Backup Notifications**: You will receive an email on the success or failure of every daily backup.  
-* **Fail2ban Alerts**: Fail2ban is configured to send email alerts when an IP is banned.
+* Container health checks
+* Disk space monitoring
+* Backup success/failure notifications
+* Failed login attempt alerts
+* Weekly Cloudflare IP updates
+
+
+### **Log Rotation Setup**
+
+Create /etc/logrotate.d/vaultwarden-oci:
+
+```
+/path/to/VaultWarden-OCI/data/caddy_logs/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    sharedscripts
+    postrotate
+        docker exec bw_caddy caddy reload 2>/dev/null || true
+    endscript
+}
+
+/path/to/VaultWarden-OCI/data/backup_logs/*.log {
+    weekly
+    missingok
+    rotate 12
+    compress
+    delaycompress
+    notifempty
+}
+```
+
+
+## **Updating the Stack**
+
+### **Automatic Updates**
+
+Watchtower handles container updates automatically. To customize:
+
+```
+WATCHTOWER_SCHEDULE=0 0 3 * * 0  # 3 AM every Sunday
+```
+
+
+### **Manual Updates**
+
+```
+# Update containers
+docker compose pull
+docker compose up -d
+
+# Update scripts (backup your settings first)
+git pull origin main
+```
+
+
+## **Disaster Recovery**
+
+### **Complete System Recovery**
+
+1. **Fresh server setup**: Install Docker and Docker Compose
+2. **Clone repository**: git clone and cd into directory
+3. **Restore settings**: Copy settings.env or configure OCI Vault access
+4. **Restore rclone config**: Copy ./backup/rclone.conf
+5. **Set up cron job**: Configure weekly Cloudflare IP updates
+6. **Run restore**: ./backup/restore.sh
+7. **Start services**: ./startup.sh
+
+### **Backup Verification**
+
+```
+# Test backup integrity
+export GPG_PASSPHRASE='your-backup-passphrase'
+gpg --decrypt backup_file.tar.gz.gpg | tar -tzf - > /dev/null
+```
+
+
+### **Emergency Access**
+
+If Vaultwarden is inaccessible:
+
+1. Check container logs: docker compose logs vaultwarden
+2. Verify network: ./diagnose.sh
+3. Check DNS resolution
+4. Verify SSL certificate status
+5. Check Cloudflare IP ranges: ./caddy/update_cloudflare_ips.sh
+
+## **License and Support**
+
+This project is provided as-is for educational and production use. Please review all security configurations for your specific requirements.
+
+For issues and contributions, please use the GitHub repository issue tracker.
+
+**Security Note**: This setup includes multiple layers of security, but you are responsible for:
+
+- Keeping your server updated
+- Managing secure passwords
+- Monitoring backup integrity
+- Following security best practices
+- Maintaining scheduled tasks (cron jobs)
+
+**Maintenance Reminder**: Your weekly Cloudflare IP update ensures optimal security even between service restarts. Monitor cron logs periodically to ensure this task runs successfully.
+
