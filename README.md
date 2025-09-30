@@ -19,9 +19,7 @@ The stack is designed with a security-first approach and includes the following 
 
 ### **Hardware Requirements**
 
-* **Minimum**: 2 vCPUs, 4GB RAM, 20GB disk space
-* **Recommended**: 4 vCPUs, 6GB RAM, 50GB disk space
-* **Oracle A1 Flex**: 1 OCPU ARM64, 6GB RAM (free tier) - excellent performance
+* **Oracle A1 Flex**: 1 OCPU ARM64, 6GB RAM (free tier)
 
 
 ### **Software Prerequisites**
@@ -72,10 +70,7 @@ nano settings.env
 
 ```
 # Generate strong passwords
-openssl rand -base64 32  # For MARIADB_ROOT_PASSWORD
-openssl rand -base64 32  # For MARIADB_PASSWORD  
-openssl rand -base64 32  # For ADMIN_TOKEN
-openssl rand -base64 32  # For REDIS_PASSWORD
+openssl rand -base64 32  
 ```
 
 
