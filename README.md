@@ -29,14 +29,12 @@ Please follow the **Setup Instructions** below carefully to ensure all necessary
 ## **System Requirements**
 
 ### **Hardware Requirements**
-
-* **Minimum**: 1 vCPUs, 4GB RAM, 20GB disk space  
-* **Recommended**: 4 vCPUs, 6GB RAM, 50GB disk space  
-* **Oracle A1 Flex**: 1 OCPUs, 6GB RAM (free tier) \- excellent choice
+ 
+* **Oracle A1 Flex**: 1 OCPUs, 6GB RAM (free tier)
 
 ### **Software Prerequisites**
 
-* **Operating System**: Ubuntu 22.04 LTS (recommended) or similar Linux distribution  
+* **Operating System**: Ubuntu 22.04 Minimal LTS (recommended) or similar Linux distribution  
 * **Docker**: Version 20.10+  
 * **Docker Compose**: Version 2.0+  
 * **Domain name** you own with DNS management access  
@@ -80,10 +78,7 @@ nano settings.env
 Bash
 
 \# Generate strong, unique passwords for each secret  
-openssl rand \-base64 32  \# For MARIADB\_ROOT\_PASSWORD  
-openssl rand \-base64 32  \# For MARIADB\_PASSWORD  
-openssl rand \-base64 32  \# For ADMIN\_TOKEN  
-openssl rand \-base64 32  \# For REDIS\_PASSWORD
+openssl rand \-base64 32 
 
 ### **3\. Configure rclone for Backups**
 
