@@ -1,81 +1,156 @@
-#!/bin/bash
-# check-disk-space.sh - Monitor disk usage and send alerts
+#!/usr/bin/env bash
+# check-disk-space.sh -- Disk space monitoring with email alerts
 
-set -euo pipefail
-
-# Source settings
-if [ -f ./settings.env ]; then
-    source ./settings.env
+# Source library modules if available, otherwise use basic functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+if [[ -f "$SCRIPT_DIR/lib/common.sh" ]]; then
+    source "$SCRIPT_DIR/lib/common.sh"
 else
-    echo "ERROR: settings.env not found"
-    exit 1
+    # Basic fallback functions if lib is not available
+    log_info() { echo "[INFO] $1"; }
+    log_warning() { echo "[WARNING] $1" >&2; }
+    log_error() { echo "[ERROR] $1" >&2; exit 1; }
+    log_success() { echo "[SUCCESS] $1"; }
 fi
 
 # Configuration
-THRESHOLD=${DISK_ALERT_THRESHOLD:-85}  # Alert when disk usage exceeds this percentage
-DATA_DIR="./data"
+THRESHOLD="${DISK_ALERT_THRESHOLD:-85}"  # Percentage threshold
+ALERT_EMAIL="${ALERT_EMAIL:-admin@example.com}"
+DATA_DIR="${DATA_DIR:-./data}"
 
-# Function to get container ID dynamically
-get_container_id() {
-    local service_name=$1
-    docker compose ps -q "$service_name" 2>/dev/null || echo ""
+# Check if data directory exists
+if [[ ! -d "$DATA_DIR" ]]; then
+    log_error "Data directory not found: $DATA_DIR"
+fi
+
+# Get current disk usage
+get_disk_usage() {
+    local usage_line
+    usage_line=$(df "$DATA_DIR" | tail -1)
+    
+    # Extract usage percentage (remove % sign)
+    echo "$usage_line" | awk '{print $5}' | sed 's/%//'
 }
 
-# Function to send alert
-send_alert() {
-    local message=$1
-    local subject="Vaultwarden Disk Space Alert"
+# Get disk usage details
+get_disk_details() {
+    local usage_line
+    usage_line=$(df -h "$DATA_DIR" | tail -1)
     
-    echo "$(date): $message"
+    echo "Disk Usage Details:"
+    echo "==================="
+    echo "Filesystem: $(echo "$usage_line" | awk '{print $1}')"
+    echo "Size:       $(echo "$usage_line" | awk '{print $2}')"
+    echo "Used:       $(echo "$usage_line" | awk '{print $3}')"
+    echo "Available:  $(echo "$usage_line" | awk '{print $4}')"
+    echo "Usage:      $(echo "$usage_line" | awk '{print $5}')"
+    echo "Mount:      $(echo "$usage_line" | awk '{print $6}')"
+    echo ""
+}
+
+# Get largest directories in data
+get_largest_directories() {
+    echo "Largest directories in $DATA_DIR:"
+    echo "=================================="
     
-    # Send email notification if configured
-    if [ -n "${SMTP_HOST:-}" ] && [ -n "${SMTP_FROM:-}" ] && [ -n "${ALERT_EMAIL:-}" ]; then
-        backup_id=$(get_container_id "backup")
-        if [ -n "$backup_id" ]; then
-            echo "$message" | docker exec -i "$backup_id" msmtp "$ALERT_EMAIL" --subject="$subject" || echo "Failed to send email alert"
-        fi
+    if [[ -d "$DATA_DIR" ]]; then
+        # Use du to find largest subdirectories, sort by size
+        du -h "$DATA_DIR"/* 2>/dev/null | sort -hr | head -10
+    else
+        echo "Data directory not accessible"
+    fi
+    echo ""
+}
+
+# Send email alert
+send_alert_email() {
+    local usage="$1"
+    local subject="⚠️ VaultWarden-OCI Disk Space Alert - ${usage}% Used"
+    
+    local body="VaultWarden-OCI disk space usage has exceeded the threshold.
+
+Current Usage: ${usage}%
+Threshold: ${THRESHOLD}%
+Server: $(hostname)
+Timestamp: $(date)
+
+$(get_disk_details)
+
+$(get_largest_directories)
+
+Recommended Actions:
+- Check backup logs and clean old backups
+- Review application logs and rotate if needed
+- Consider increasing disk space or adjusting retention policies
+- Run './perf-monitor.sh logs clean' to cleanup old logs
+
+For detailed analysis, run: ./perf-monitor.sh logs status"
+
+    # Try to send email using different methods
+    if command -v msmtp >/dev/null 2>&1; then
+        {
+            echo "From: VaultWarden-OCI <system@$(hostname)>"
+            echo "To: $ALERT_EMAIL"
+            echo "Subject: $subject"
+            echo "Content-Type: text/plain; charset=UTF-8"
+            echo ""
+            echo "$body"
+        } | msmtp -t 2>/dev/null && log_success "Alert email sent via msmtp"
+    elif command -v sendmail >/dev/null 2>&1; then
+        {
+            echo "From: VaultWarden-OCI <system@$(hostname)>"
+            echo "To: $ALERT_EMAIL"
+            echo "Subject: $subject"
+            echo ""
+            echo "$body"
+        } | sendmail "$ALERT_EMAIL" 2>/dev/null && log_success "Alert email sent via sendmail"
+    elif command -v mail >/dev/null 2>&1; then
+        echo "$body" | mail -s "$subject" "$ALERT_EMAIL" 2>/dev/null && log_success "Alert email sent via mail"
+    else
+        log_warning "No email client found - alert not sent"
+        log_warning "Install msmtp, sendmail, or mailutils to enable email alerts"
+        
+        # Log the alert to syslog as fallback
+        logger -t vaultwarden-disk-alert "Disk usage ${usage}% exceeds threshold ${THRESHOLD}%"
+        log_info "Alert logged to syslog"
     fi
 }
 
-# Check data directory disk usage
-if [ -d "$DATA_DIR" ]; then
-    usage=$(df "$DATA_DIR" | tail -1 | awk '{print $5}' | sed 's/%//')
+# Main execution
+main() {
+    local usage
+    usage=$(get_disk_usage)
     
-    echo "Current disk usage: ${usage}%"
+    if [[ -z "$usage" ]] || ! [[ "$usage" =~ ^[0-9]+$ ]]; then
+        log_error "Unable to determine disk usage"
+    fi
     
-    if [ "$usage" -gt "$THRESHOLD" ]; then
-        send_alert "WARNING: Disk usage is ${usage}% (threshold: ${THRESHOLD}%). Please free up space or expand storage."
+    log_info "Current disk usage: ${usage}%"
+    log_info "Alert threshold: ${THRESHOLD}%"
+    
+    if [[ "$usage" -ge "$THRESHOLD" ]]; then
+        log_warning "Disk usage ${usage}% exceeds threshold ${THRESHOLD}%"
         
-        # Show largest directories
-        echo "Largest directories in data folder:"
-        du -sh "$DATA_DIR"/* 2>/dev/null | sort -hr | head -10
+        get_disk_details
+        get_largest_directories
+        
+        # Send alert email
+        send_alert_email "$usage"
         
         # Suggest cleanup actions
-        echo ""
         echo "Cleanup suggestions:"
-        echo "1. Check backup retention: old backups in $DATA_DIR/backups/"
-        echo "2. Rotate logs: check $DATA_DIR/caddy_logs/ and $DATA_DIR/backup_logs/"
-        echo "3. Database maintenance: consider optimizing MariaDB"
+        echo "==================="
+        echo "1. Run log cleanup:     ./perf-monitor.sh logs clean"
+        echo "2. Check backup retention: review BACKUP_RETENTION_DAYS setting"
+        echo "3. Clean old Docker images: docker image prune -a"
+        echo "4. Check for core dumps: find /tmp -name 'core.*' -mtime +7 -delete"
         
         exit 1
     else
-        echo "Disk usage OK (${usage}% < ${THRESHOLD}%)"
+        log_success "Disk usage ${usage}% is within acceptable limits"
+        exit 0
     fi
-else
-    send_alert "ERROR: Data directory $DATA_DIR not found"
-    exit 1
-fi
+}
 
-# Check container disk usage
-echo ""
-echo "Container disk usage:"
-containers=("vaultwarden" "mariadb" "redis" "caddy" "fail2ban" "backup")
-for service in "${containers[@]}"; do
-    container_id=$(get_container_id "$service")
-    if [ -n "$container_id" ]; then
-        size=$(docker exec "$container_id" du -sh / 2>/dev/null | cut -f1 || echo "unknown")
-        echo "  $service: $size"
-    fi
-done
-
-echo "Disk space check completed successfully"
+# Execute main function
+main "$@"
