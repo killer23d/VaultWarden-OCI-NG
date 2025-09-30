@@ -2,19 +2,23 @@
 # startup.sh -- secure fetch of settings.env into RAM, then start compose
 set -euo pipefail
 
-# --- New Block: Auto-update Cloudflare IPs ---
-# Check for the IP update script and run it if it exists
+# --- Ensure IP files exist for first run ---
 CLOUDFLARE_IP_SCRIPT="./caddy/update_cloudflare_ips.sh"
+SKIP_POST_UPDATE=false  # Track if we already updated
+
 if [ -f "$CLOUDFLARE_IP_SCRIPT" ]; then
-  echo "--> Found Cloudflare IP update script. Running it now..."
-  # Make sure it's executable first
-  chmod +x "$CLOUDFLARE_IP_SCRIPT"
-  # Run the script
-  "$CLOUDFLARE_IP_SCRIPT"
+  # Only run if files don't exist (first run) or if --force-ip-update flag is passed
+  if [ ! -f "./caddy/cloudflare_ips.caddy" ] || [ ! -f "./caddy/cloudflare_ips.txt" ] || [ "${1:-}" = "--force-ip-update" ]; then
+    echo "--> Generating initial Cloudflare IP files..."
+    chmod +x "$CLOUDFLARE_IP_SCRIPT"
+    "$CLOUDFLARE_IP_SCRIPT"
+    SKIP_POST_UPDATE=true  # We just updated, skip post-start check
+  else
+    echo "--> Cloudflare IP files exist. Will update after containers start if needed."
+  fi
 else
   echo "--> INFO: Cloudflare IP update script not found at $CLOUDFLARE_IP_SCRIPT. Skipping."
 fi
-# --- End of New Block ---
 
 # If OCI_SECRET_OCID is set, fetch from OCI Vault, else use local settings.env
 TMPDIR=${TMPDIR:-/dev/shm/bwsettings}
@@ -36,14 +40,14 @@ trap cleanup EXIT
 
 if [ -n "${OCI_SECRET_OCID:-}" ]; then
   echo "Fetching settings from OCI Vault (OCID: ${OCI_SECRET_OCID})..."
-  
+
   # Validate OCI CLI configuration before attempting to fetch secrets
   if ! command -v oci &> /dev/null; then
     echo "ERROR: OCI CLI is not installed or not in PATH"
     echo "Please install OCI CLI or use local settings.env instead"
     exit 1
   fi
-  
+
   # Test OCI CLI configuration
   if ! oci os ns get > /dev/null 2>&1; then
     echo "ERROR: OCI CLI is not properly configured"
@@ -51,21 +55,21 @@ if [ -n "${OCI_SECRET_OCID:-}" ]; then
     echo "Alternatively, remove OCI_SECRET_OCID to use local settings.env"
     exit 1
   fi
-  
+
   # Validate Secret OCID format
   if [[ ! "${OCI_SECRET_OCID}" =~ ^ocid1\.vaultsecret\. ]]; then
     echo "ERROR: Invalid Secret OCID format"
     echo "Expected format: ocid1.vaultsecret.oc1...."
     exit 1
   fi
-  
+
   # Attempt to fetch the secret
   if ! oci vault secret get --secret-id "${OCI_SECRET_OCID}" --raw-output | jq -r '.data."secret-content".content' | base64 -d > "$ENVFILE"; then
     echo "ERROR: Failed to fetch secret from OCI Vault"
     echo "Please verify the Secret OCID and your permissions"
     exit 1
   fi
-  
+
   echo "✓ Successfully fetched settings from OCI Vault"
 else
   if [ -f ./settings.env ]; then
@@ -91,7 +95,16 @@ envsubst < ./fail2ban/jail.d/jail.local.template > ./fail2ban/jail.d/jail.local
 echo "✓ Fail2ban configuration created."
 
 # run compose using env file in RAM
+echo "--> Starting containers..."
 docker compose --env-file "$ENVFILE" up -d --remove-orphans
+
+# Now update IPs with running containers (only if we didn't just update)
+if [ -f "$CLOUDFLARE_IP_SCRIPT" ] && [ "$SKIP_POST_UPDATE" = false ]; then
+  echo "--> Checking for Cloudflare IP updates with running containers..."
+  "$CLOUDFLARE_IP_SCRIPT"
+elif [ "$SKIP_POST_UPDATE" = true ]; then
+  echo "--> Skipping post-start IP check (already updated during pre-start)"
+fi
 
 echo "✓ Containers started successfully"
 echo "✓ Settings file exists in RAM and will be removed on script exit"
