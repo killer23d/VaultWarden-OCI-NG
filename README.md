@@ -52,6 +52,91 @@ Please follow the **Setup Instructions** below carefully to ensure all necessary
 * **SSL certificate** (automatically managed by Caddy)
 
 
+## **Pre-Setup: System Preparation**
+
+Before beginning the main setup process, prepare your ARM64 system with these essential steps:
+
+### **Create Data Directory Structure**
+
+Create the required data directories before launching containers:
+
+```
+# Create all required data directories
+mkdir -p ./data/{bwdata,mariadb,redis,caddy_data,caddy_config,caddy_logs,backups,backup_logs,fail2ban}
+
+# Create backup-specific directories
+mkdir -p ./backup/rclone_config
+```
+
+### **Install Docker and Docker Compose (ARM64)**
+
+For Oracle Cloud ARM64 instances, install Docker using the official repository:
+
+```
+# Update package index
+sudo apt-get update
+
+# Install dependencies
+sudo apt-get install -y ca-certificates curl gnupg lsb-release
+
+# Add Docker's official GPG key
+sudo mkdir -m 0755 -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# Add Docker repository (automatically detects ARM64)
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Add user to docker group
+sudo usermod -aG docker $USER
+
+# Verify installation
+docker --version
+docker compose version
+```
+
+**Important**: Log out and back in for group changes to take effect.
+
+### **Configure Memory Swap (OCI A1 Flex)**
+
+Add swap space to prevent out-of-memory issues during database operations:
+
+```
+# Create 2GB swap file
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
+# Make permanent
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Verify swap is active
+free -h
+```
+
+### **Configure OCI Security Groups and Firewall**
+
+Configure network access for your VaultWarden instance:
+
+**OCI Console Configuration:**
+1. Navigate to your instance's subnet
+2. Edit the Security List
+3. Add Ingress Rules:
+   - **HTTP**: Source `0.0.0.0/0`, Destination Port `80`
+   - **HTTPS**: Source `0.0.0.0/0`, Destination Port `443`
+
+**Local Firewall (if enabled):**
+```
+# Allow HTTP and HTTPS traffic
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw reload
+```
+
 ## **Setup Instructions**
 
 ### **1. Clone the Repository**
@@ -97,6 +182,49 @@ openssl rand -base64 32  # For ADMIN_TOKEN
 openssl rand -base64 32  # For REDIS_PASSWORD
 openssl rand -base64 32  # For BACKUP_PASSPHRASE
 ```
+
+### **Enhanced Configuration Setup**
+
+### **Required rclone Configuration**
+
+Even if not using backups initially, create the rclone configuration file to prevent container startup failures:
+
+```
+# Copy the example configuration
+cp backup/rclone.conf.example backup/rclone.conf
+
+# OR create a minimal configuration
+cat > backup/rclone.conf << EOF
+# Minimal rclone configuration
+# Configure your actual cloud storage later
+[dummy]
+type = local
+EOF
+```
+
+**For actual cloud storage setup**, follow the original rclone configuration steps below.
+
+### **Settings.env Critical Validation**
+
+When configuring `settings.env`, ensure these critical consistencies:
+
+```
+# These passwords MUST match exactly:
+MARIADB_PASSWORD=your-strong-db-password
+DATABASE_URL=mysql://vaultwarden:your-strong-db-password@bw_mariadb:3306/vaultwarden
+#                              ^^^^^ MUST BE IDENTICAL ^^^^^
+
+# Container names must match docker-compose.yml:
+# Use "bw_mariadb" (not "mariadb" or "db")
+# Use "bw_redis" (not "redis")
+
+# Domain configuration must be complete:
+DOMAIN_NAME=example.com
+APP_DOMAIN=vault.${DOMAIN_NAME}  # Required for Caddy
+DOMAIN=https://vault.example.com  # Required for Vaultwarden
+```
+
+**Validation Script**: Always run `./validate-config.sh` before first launch to catch configuration errors.
 
 
 ### **3. Configure rclone for Backups**
@@ -394,6 +522,43 @@ The script will find available backups and let you choose which one to restore.
 | **Out of memory on OCI A1** | No resource limits | Resource limits are included in corrected docker-compose.yml |
 | **Cloudflare IPs outdated** | No weekly updates | Set up cron job: `0 2 * * 0 /path/to/caddy/update_cloudflare_ips.sh` |
 
+### **Troubleshooting: ARM64-Specific Issues**
+
+### **Container Startup Problems**
+
+| Issue | ARM64-Specific Cause | Solution |
+|-------|---------------------|----------|
+| **Containers fail health checks** | ARM64 images may start slower | Increase health check intervals in docker-compose.yml |
+| **MariaDB container killed** | No swap space configured | Add swap space as described above |
+| **Fail2ban container crashes** | ARM64 image compatibility | Check logs: `docker compose logs fail2ban` |
+| **Out of memory errors** | 6GB RAM limit reached | Monitor with `docker stats` and optimize resource limits |
+
+### **Network Connectivity Issues**
+
+```
+# Test container network connectivity
+docker exec vaultwarden nc -z bw_mariadb 3306
+docker exec vaultwarden nc -z bw_redis 6379
+
+# Check if ports are accessible externally
+curl -I http://your-domain.com
+curl -I https://your-domain.com
+
+# Verify Cloudflare IP detection
+docker compose logs caddy | grep -i cloudflare
+```
+
+### **Performance Tuning for ARM64**
+
+```
+# Optimize for single ARM64 CPU
+export VAULTWARDEN_WORKERS=2
+export DATABASE_MAX_CONNECTIONS=15
+
+# Monitor resource usage
+watch 'free -h && echo "=== Docker Stats ===" && docker stats --no-stream'
+```
+
 ### **OCI Vault Issues**
 
 | Issue | Cause | Solution |
@@ -450,4 +615,3 @@ This stack is designed for proactive monitoring with minimal resource impact on 
 * **Resource Monitoring**: Built-in tracking via monitor.sh script
 
 The monitoring system is lightweight and optimized for single-CPU ARM64 systems, ensuring security without impacting application performance.
-
