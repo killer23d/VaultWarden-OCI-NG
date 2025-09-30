@@ -1,0 +1,39 @@
+# VaultWarden Log Rotation Configuration
+
+# Caddy logs
+/var/log/caddy/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    postrotate
+        # Reload Caddy gracefully to reopen log files
+        docker kill --signal=USR1 bw_caddy 2>/dev/null || true
+    endscript
+}
+
+# Backup logs
+/var/log/backup/*.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+}
+
+# Docker container logs (JSON files)
+/var/lib/docker/containers/*/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    maxsize 100M
+}
