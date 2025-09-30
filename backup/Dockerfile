@@ -1,42 +1,40 @@
-FROM ubuntu:22.04
+FROM alpine:latest
 
-# Install only essential packages for backup operations
-RUN apt-get update && apt-get install -y \
-    gpg \
-    msmtp \
-    ca-certificates \
-    curl \
+# Install required packages
+RUN apk add --no-cache \
+    bash \
+    mysql-client \
     tar \
     gzip \
-    cron \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /tmp/* \
-    && rm -rf /var/tmp/*
+    gnupg \
+    rclone \
+    msmtp \
+    mailx \
+    curl \
+    tzdata \
+    && rm -rf /var/cache/apk/*
 
-# Install rclone
-RUN curl https://rclone.org/install.sh | bash
+# Create backup user
+RUN addgroup -S backup && adduser -S backup -G backup
 
-# Create backup directory
-RUN mkdir -p /backup
+# Set up directories
+RUN mkdir -p /backups /var/log/backup /etc/crontabs
+RUN chown -R backup:backup /backups /var/log/backup
 
-# Copy backup scripts
+# Copy scripts
 COPY backup.sh /backup/backup.sh
 COPY restore.sh /backup/restore.sh
+RUN chmod +x /backup/*.sh
 
-# Make scripts executable
-RUN chmod +x /backup/backup.sh /backup/restore.sh
+# Set up cron job for automated backups
+RUN echo "0 2 * * * /backup/backup.sh" > /etc/crontabs/root
+RUN echo "0 6 * * 0 /backup/backup.sh --force" >> /etc/crontabs/root  # Weekly forced backup
 
-# Setup cron
-COPY crontab /etc/cron.d/backup-crontab
-RUN chmod 0644 /etc/cron.d/backup-crontab
-RUN crontab /etc/cron.d/backup-crontab
+# Health check
+HEALTHCHECK --interval=30m --timeout=10s --retries=3 --start-period=60s \
+    CMD pgrep crond >/dev/null && test -w /backups || exit 1
 
-# Create log directory
-RUN mkdir -p /var/log/backup
+USER backup
+WORKDIR /backup
 
-# Set up proper timezone handling
-RUN ln -sf /usr/share/zoneinfo/UTC /etc/localtime
-
-# Start cron in foreground
-CMD ["cron", "-f"]
+CMD ["crond", "-f", "-l", "8"]
