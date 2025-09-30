@@ -263,7 +263,8 @@ services:
     volumes:
       - ./data/backups:/backups:rw
       - ./data/backup_logs:/var/log/backup:rw
-      - ./backup/rclone.conf:/home/backup/.config/rclone/rclone.conf:ro
+      # Mount rclone config if it exists, otherwise use empty config
+      - ${PWD}/backup/rclone.conf:/home/backup/.config/rclone/rclone.conf:ro
     networks:
       - bw_net
     depends_on:
