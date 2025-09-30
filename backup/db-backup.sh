@@ -290,36 +290,129 @@ EOF
             fi
         fi
         
-        # Upload to remote storage
-        if [[ "$skip_upload" == "false" ]]; then
-            if upload_backup "$db_backup_file"; then
-                backup_details+="✓ Remote upload completed\n"
+        # Upload to remote storage (Modified to be fault-tolerant)
+upload_backup() {
+    local backup_file="$1"
+    
+    if [[ -z "$BACKUP_REMOTE" ]]; then
+        log_info "No remote storage configured - keeping local backup only"
+        return 0
+    fi
+    
+    if ! command -v rclone >/dev/null 2>&1; then
+        log_warning "rclone not available - skipping remote upload"
+        log_warning "Install rclone in container to enable remote backups"
+        return 0  # Return success to continue with local backup
+    fi
+    
+    # Check if rclone config exists
+    if [[ ! -f "/home/backup/.config/rclone/rclone.conf" ]]; then
+        log_warning "rclone configuration file not found - skipping remote upload"
+        log_warning "Create rclone.conf to enable remote backups"
+        return 0  # Return success to continue with local backup
+    fi
+    
+    # Validate rclone remote exists
+    if ! rclone --config /home/backup/.config/rclone/rclone.conf listremotes | grep -q "^${BACKUP_REMOTE}:$"; then
+        log_warning "rclone remote '$BACKUP_REMOTE' not found in configuration"
+        log_warning "Available remotes: $(rclone --config /home/backup/.config/rclone/rclone.conf listremotes | tr '\n' ' ')"
+        return 0  # Return success to continue with local backup
+    fi
+    
+    log_info "Uploading backup to remote storage: $BACKUP_REMOTE"
+    
+    local remote_path="$BACKUP_REMOTE:$BACKUP_PATH/$(basename "$backup_file")"
+    local max_attempts=3
+    local attempt=1
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        log_info "Upload attempt $attempt of $max_attempts..."
+        
+        if rclone copy "$backup_file" "$BACKUP_REMOTE:$BACKUP_PATH/" \
+            --config /home/backup/.config/rclone/rclone.conf \
+            --progress \
+            --retries 2 \
+            --low-level-retries 3 \
+            --stats 30s 2>/dev/null; then
+            
+            log_success "Backup uploaded successfully to: $remote_path"
+            
+            # Verify upload by checking file exists
+            if rclone lsf "$BACKUP_REMOTE:$BACKUP_PATH/" \
+                --config /home/backup/.config/rclone/rclone.conf \
+                2>/dev/null | grep -q "$(basename "$backup_file")"; then
+                log_success "Upload verification passed"
+                return 0
             else
-                backup_details+="✗ Remote upload failed\n"
+                log_warning "Upload verification failed - file not found in remote"
             fi
         else
-            backup_details+="- Remote upload skipped\n"
+            log_warning "Upload attempt $attempt failed"
         fi
         
-    else
-        backup_success=false
-        backup_details+="✗ Database backup failed\n"
+        attempt=$((attempt + 1))
+        if [[ $attempt -le $max_attempts ]]; then
+            log_info "Waiting 30 seconds before retry..."
+            sleep 30
+        fi
+    done
+    
+    # All upload attempts failed, but continue with local backup
+    log_error "All upload attempts failed - backup will remain local only"
+    log_error "Check rclone configuration and network connectivity"
+    log_error "Remote: $BACKUP_REMOTE, Path: $BACKUP_PATH"
+    
+    # Return 0 (success) so local backup is still considered successful
+    return 0
+}
+
+# Clean old backups (Enhanced with remote cleanup safety)
+cleanup_old_backups() {
+    log_info "Cleaning up old backups (retention: $RETENTION_DAYS days)..."
+    
+    # Clean local backups
+    local deleted_local=0
+    if [[ -d "$BACKUP_DIR" ]]; then
+        while IFS= read -r -d '' file; do
+            log_info "Removing old local backup: $(basename "$file")"
+            rm -f "$file"
+            deleted_local=$((deleted_local + 1))
+        done < <(find "$BACKUP_DIR" -name "db_backup_*.sql*" -mtime +$RETENTION_DAYS -print0 2>/dev/null)
     fi
     
-    # Cleanup old backups
-    cleanup_old_backups
-    backup_details+="✓ Old backups cleaned up\n"
-    
-    # Send notification
-    if [[ "$backup_success" == "true" ]]; then
-        log_success "Database backup process completed successfully"
-        send_backup_notification "SUCCESS" "$backup_details"
-        exit 0
-    else
-        log_error "Database backup process failed"
-        send_backup_notification "FAILED" "$backup_details"
-        exit 1
+    # Clean remote backups (with error handling)
+    local deleted_remote=0
+    if [[ -n "$BACKUP_REMOTE" ]] && command -v rclone >/dev/null 2>&1; then
+        if [[ -f "/home/backup/.config/rclone/rclone.conf" ]]; then
+            log_info "Cleaning old remote backups..."
+            
+            # List old files first
+            local old_files
+            old_files=$(rclone lsf "$BACKUP_REMOTE:$BACKUP_PATH/" \
+                --config /home/backup/.config/rclone/rclone.conf \
+                --min-age "${RETENTION_DAYS}d" 2>/dev/null | grep "db_backup_" | wc -l)
+            
+            if [[ "$old_files" -gt 0 ]]; then
+                log_info "Found $old_files old remote backup files to delete"
+                
+                if rclone delete "$BACKUP_REMOTE:$BACKUP_PATH/" \
+                    --config /home/backup/.config/rclone/rclone.conf \
+                    --min-age "${RETENTION_DAYS}d" \
+                    --include "db_backup_*" 2>/dev/null; then
+                    log_success "Cleaned $old_files old remote backups"
+                    deleted_remote=$old_files
+                else
+                    log_warning "Failed to clean remote backups - check connectivity"
+                fi
+            else
+                log_info "No old remote backups to clean"
+            fi
+        else
+            log_info "No rclone config - skipping remote cleanup"
+        fi
     fi
+    
+    log_success "Cleanup completed: $deleted_local local files removed, $deleted_remote remote files removed"
 }
 
 # Execute main function
