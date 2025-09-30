@@ -1,0 +1,108 @@
+# rclone configuration template
+# Copy this file to ../config/rclone.conf and customize for your storage provider
+# 
+# SECURITY: This file contains authentication credentials
+# - Keep permissions at 600 (read/write owner only)
+# - Never commit the actual rclone.conf to version control
+# - Use environment variables for sensitive values when possible
+
+# ============================================================================
+# BACKBLAZE B2 CONFIGURATION
+# ============================================================================
+[b2-backup]
+type = b2
+account = your-account-id
+key = your-application-key
+# Optional: specific bucket
+# bucket = vaultwarden-backups
+
+# ============================================================================
+# AWS S3 CONFIGURATION  
+# ============================================================================
+[s3-backup]
+type = s3
+provider = AWS
+access_key_id = your-access-key-id
+secret_access_key = your-secret-access-key
+region = us-east-1
+# Optional: specific bucket
+# bucket = vaultwarden-backups
+
+# ============================================================================
+# GOOGLE DRIVE CONFIGURATION
+# ============================================================================
+[google-drive]
+type = drive
+# You'll need to run 'rclone config' to get the OAuth token
+client_id = your-client-id
+client_secret = your-client-secret
+# token = {"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}
+
+# ============================================================================
+# GOOGLE CLOUD STORAGE CONFIGURATION
+# ============================================================================
+[gcs-backup]
+type = google cloud storage
+project_number = your-project-number
+service_account_file = /path/to/service-account.json
+# Or use service account credentials directly:
+# service_account_credentials = {"type":"service_account",...}
+
+# ============================================================================
+# MICROSOFT ONEDRIVE CONFIGURATION
+# ============================================================================
+[onedrive-backup]
+type = onedrive
+# You'll need to run 'rclone config' to get the OAuth token
+
+# ============================================================================
+# DROPBOX CONFIGURATION
+# ============================================================================
+[dropbox-backup]
+type = dropbox
+# You'll need to run 'rclone config' to get the OAuth token
+
+# ============================================================================
+# SFTP/SSH CONFIGURATION
+# ============================================================================
+[sftp-backup]
+type = sftp
+host = your-server.com
+user = backup-user
+# Use key-based authentication (recommended)
+key_file = /path/to/private/key
+# Or password authentication (less secure)
+# pass = your-password
+port = 22
+
+# ============================================================================
+# LOCAL/NFS MOUNT CONFIGURATION
+# ============================================================================
+[local-backup]
+type = local
+# This points to a local directory or mounted network drive
+nounc = true
+
+# ============================================================================
+# CONFIGURATION NOTES
+# ============================================================================
+#
+# 1. Security Best Practices:
+#    - Use service accounts or app-specific passwords
+#    - Enable 2FA on your cloud storage accounts
+#    - Regularly rotate access keys
+#    - Use least-privilege access policies
+#
+# 2. To configure interactively:
+#    docker compose exec bw_backup rclone config
+#
+# 3. To test your configuration:
+#    docker compose exec bw_backup rclone lsd remote-name:
+#
+# 4. To copy this template:
+#    cp rclone.conf.example ../config/rclone.conf
+#    # Then edit ../config/rclone.conf with your credentials
+#
+# 5. Environment variable substitution:
+#    Some values can use environment variables (provider-specific)
+#    Check rclone documentation for your provider
