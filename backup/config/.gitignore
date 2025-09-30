@@ -1,0 +1,17 @@
+# Protect sensitive backup configurations
+*
+!.gitignore
+!README.md
+
+# rclone configuration contains credentials
+rclone.conf
+
+# Backup of rclone config
+*.bak
+
+# Temporary files
+*.tmp
+*.temp
+
+# Log files that might contain sensitive data
+*.log
