@@ -5,7 +5,7 @@ services:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
-    user: "1000:1000"
+    user: "${PUID:-1000}:${PGID:-1000}"  # User services - data directory access
     env_file:
       - ./settings.env
     volumes:
@@ -14,9 +14,9 @@ services:
       - bw_net
     depends_on:
       bw_mariadb:
-        condition: service_healthy  # MUST be healthy - VaultWarden cannot start without DB
+        condition: service_healthy
       bw_redis:
-        condition: service_healthy  # MUST be healthy - VaultWarden needs cache
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/alive || exit 1"]
       interval: 2m
@@ -47,7 +47,7 @@ services:
     image: mariadb:11-jammy
     container_name: bw_mariadb
     restart: unless-stopped
-    user: "1000:1000"
+    user: "999:999"  # System service - security separation
     env_file:
       - ./settings.env
     environment:
@@ -74,7 +74,7 @@ services:
       --key-buffer-size=32M
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u${MARIADB_USER} -p${MARIADB_PASSWORD} --silent || exit 1"]
-      interval: 30s  # Fast for dependency resolution
+      interval: 30s
       timeout: 15s
       retries: 5
       start_period: 120s
@@ -99,7 +99,7 @@ services:
     image: redis:7-alpine
     container_name: bw_redis
     restart: unless-stopped
-    user: "1000:1000"
+    user: "999:999"  # System service - security separation
     env_file:
       - ./settings.env
     volumes:
@@ -108,7 +108,7 @@ services:
     command: ["redis-server", "/etc/redis/redis.conf", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 30s  # Fast for dependency resolution
+      interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
@@ -133,7 +133,7 @@ services:
     image: caddy:2-alpine
     container_name: bw_caddy
     restart: unless-stopped
-    user: "1000:1000"
+    user: "${PUID:-1000}:${PGID:-1000}"  # User services - data directory access
     env_file:
       - ./settings.env
     volumes:
@@ -147,7 +147,7 @@ services:
       - "443:443"
     depends_on:
       vaultwarden:
-        condition: service_started  # Relaxed - Caddy will retry connection to VaultWarden
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "caddy validate --config /etc/caddy/Caddyfile && curl -f http://vaultwarden:80/alive || exit 1"]
       interval: 5m
@@ -188,8 +188,8 @@ services:
     cap_add:
       - NET_ADMIN
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=${PUID:-1000}  # Uses PUID/PGID variables
+      - PGID=${PGID:-1000}
       - VERBOSITY=-vv
     healthcheck:
       test: ["CMD-SHELL", "fail2ban-client ping >/dev/null 2>&1 || exit 1"]
@@ -201,7 +201,7 @@ services:
       - bw_net
     depends_on:
       bw_caddy:
-        condition: service_started  # Relaxed - Fail2ban will wait for log files to appear
+        condition: service_started
     deploy:
       resources:
         limits:
@@ -234,8 +234,8 @@ services:
     networks:
       - bw_net
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=${PUID:-1000}  # Uses PUID/PGID variables
+      - PGID=${PGID:-1000}
     deploy:
       resources:
         limits:
@@ -258,7 +258,7 @@ services:
     image: bitwarden_backup:latest
     container_name: bw_backup
     restart: unless-stopped
-    user: "1000:1000"
+    user: "${PUID:-1000}:${PGID:-1000}"  # User services - data directory access
     env_file:
       - ./settings.env
     volumes:
@@ -269,7 +269,7 @@ services:
       - bw_net
     depends_on:
       bw_mariadb:
-        condition: service_healthy  # MUST be healthy - backup needs working database
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "pgrep crond >/dev/null && test -w /backups || exit 1"]
       interval: 30m
@@ -341,7 +341,7 @@ services:
     image: alpine:latest
     container_name: bw_logrotate
     restart: unless-stopped
-    user: "1000:1000"
+    user: "${PUID:-1000}:${PGID:-1000}"  # User services - data directory access
     volumes:
       - ./data/caddy_logs:/var/log/caddy:rw
       - ./data/backup_logs:/var/log/backup:rw
