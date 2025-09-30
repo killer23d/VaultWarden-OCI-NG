@@ -1,109 +1,249 @@
-#!/bin/bash
-# monitor.sh - Monitor Vaultwarden stack status and performance
+#!/usr/bin/env bash
+# monitor.sh -- Modular monitoring script for VaultWarden-OCI
 
+# Set up environment
 set -euo pipefail
+export DEBUG="${DEBUG:-false}"
 
-# Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Source library modules  
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/docker.sh"
 
-echo -e "${BLUE}=== Vaultwarden Stack Monitor ===${NC}"
-echo "Generated at: $(date)"
-echo ""
+# ================================
+# MONITORING MODULES
+# ================================
 
-# Function to get container ID dynamically
-get_container_id() {
-    local service_name=$1
-    docker compose ps -q "$service_name" 2>/dev/null || echo ""
+# Service status monitoring
+show_service_status() {
+    echo -e "${BOLD}=== SERVICE STATUS ===${NC}"
+    
+    perform_health_check
+    echo ""
 }
 
-# Function to check service status
-check_service_status() {
-    local service_name=$1
-    local container_id=$(get_container_id "$service_name")
+# Resource monitoring
+show_resource_usage() {
+    echo -e "${BOLD}=== RESOURCE USAGE ===${NC}"
     
-    if [ -z "$container_id" ]; then
-        echo -e "${RED}❌ $service_name: NOT RUNNING${NC}"
-        return 1
+    if is_stack_running; then
+        docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}"
+    else
+        log_warning "No containers running"
     fi
     
-    local status=$(docker inspect --format='{{.State.Status}}' "$container_id" 2>/dev/null || echo "unknown")
-    local health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-health-check{{end}}' "$container_id" 2>/dev/null || echo "unknown")
-    
-    case $status in
-        "running")
-            if [ "$health" = "healthy" ]; then
-                echo -e "${GREEN}✅ $service_name: RUNNING (HEALTHY)${NC}"
-            elif [ "$health" = "unhealthy" ]; then
-                echo -e "${YELLOW}⚠️  $service_name: RUNNING (UNHEALTHY)${NC}"
-            else
-                echo -e "${GREEN}✅ $service_name: RUNNING${NC}"
-            fi
-            ;;
-        "restarting")
-            echo -e "${YELLOW}🔄 $service_name: RESTARTING${NC}"
-            ;;
-        "exited")
-            echo -e "${RED}❌ $service_name: EXITED${NC}"
-            ;;
-        *)
-            echo -e "${YELLOW}⚠️  $service_name: $status${NC}"
-            ;;
-    esac
+    echo ""
 }
 
-# Check all services
-echo -e "${BLUE}📋 Service Status:${NC}"
-services=("vaultwarden" "mariadb" "redis" "caddy" "fail2ban" "backup" "watchtower")
-for service in "${services[@]}"; do
-    check_service_status "$service"
-done
+# Recent logs monitoring
+show_recent_logs() {
+    local lines="${1:-10}"
+    
+    echo -e "${BOLD}=== RECENT LOGS (last ${lines} lines) ===${NC}"
+    
+    for service in "${SERVICES[@]}"; do
+        if is_service_running "$service"; then
+            echo -e "${YELLOW}--- $service ---${NC}"
+            get_service_logs "$service" "$lines"
+            echo ""
+        fi
+    done
+}
 
-echo ""
-echo -e "${BLUE}📊 Resource Usage:${NC}"
-
-# Get all running container IDs
-running_containers=""
-for service in "${services[@]}"; do
-    container_id=$(get_container_id "$service")
-    if [ -n "$container_id" ]; then
-        running_containers="$running_containers $container_id"
+# Disk usage monitoring
+show_disk_usage() {
+    echo -e "${BOLD}=== DISK USAGE ===${NC}"
+    
+    # Overall disk usage
+    df -h . 2>/dev/null || echo "Unable to check disk usage"
+    
+    # Data directory breakdown
+    if [[ -d "./data" ]]; then
+        echo -e "\n${BLUE}Data Directory Breakdown:${NC}"
+        du -sh ./data/* 2>/dev/null | sort -hr || echo "Unable to check data directory"
     fi
-done
+    
+    echo ""
+}
 
-if [ -n "$running_containers" ]; then
-    docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}" $running_containers
-else
-    echo "No containers running"
-fi
+# Network status monitoring  
+show_network_status() {
+    echo -e "${BOLD}=== NETWORK STATUS ===${NC}"
+    
+    # Docker networks
+    echo -e "${BLUE}Docker Networks:${NC}"
+    docker network ls --filter name=vaultwarden --format "table {{.Name}}\t{{.Driver}}\t{{.Scope}}"
+    
+    # Internal connectivity
+    test_internal_connectivity
+    
+    echo ""
+}
 
-echo ""
-echo -e "${BLUE}📝 Recent Logs (last 10 lines):${NC}"
+# Show system information
+show_system_info() {
+    echo -e "${BOLD}=== SYSTEM INFORMATION ===${NC}"
+    
+    echo "Hostname: $(hostname)"
+    echo "Uptime: $(uptime -p 2>/dev/null || uptime)"
+    echo "Load: $(uptime | awk -F'load average:' '{print $2}')"
+    
+    # Memory summary
+    echo -e "\n${BLUE}Memory Summary:${NC}"
+    free -h | grep -E '^Mem:|^Swap:'
+    
+    echo ""
+}
 
-# Show recent logs for each service
-for service in "${services[@]}"; do
-    container_id=$(get_container_id "$service")
-    if [ -n "$container_id" ]; then
-        echo ""
-        echo -e "${YELLOW}--- $service logs ---${NC}"
-        docker logs --tail 10 "$container_id" 2>/dev/null || echo "No logs available"
+# Live monitoring mode
+live_monitor() {
+    local refresh_interval="${1:-5}"
+    
+    log_info "Starting live monitor (refresh every ${refresh_interval}s, press Ctrl+C to exit)"
+    
+    while true; do
+        clear
+        echo -e "${BOLD}${BLUE}VaultWarden-OCI Live Monitor${NC} - $(date)"
+        echo "Refresh interval: ${refresh_interval}s | Press Ctrl+C to exit"
+        echo "=================================================================="
+        
+        show_service_status
+        show_resource_usage
+        
+        sleep "$refresh_interval"
+    done
+}
+
+# ================================
+# MAIN EXECUTION
+# ================================
+
+main() {
+    local show_logs=false
+    local log_lines=10
+    local live_mode=false
+    local refresh_interval=5
+    local selected_modules=()
+    local run_all=true
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --logs)
+                show_logs=true
+                shift
+                ;;
+            --log-lines)
+                log_lines="$2"
+                shift 2
+                ;;
+            --live)
+                live_mode=true
+                shift
+                ;;
+            --refresh)
+                refresh_interval="$2"
+                shift 2
+                ;;
+            --status)
+                selected_modules+=("status")
+                run_all=false
+                shift
+                ;;
+            --resources)
+                selected_modules+=("resources")
+                run_all=false
+                shift
+                ;;
+            --disk)
+                selected_modules+=("disk")
+                run_all=false
+                shift
+                ;;
+            --network)
+                selected_modules+=("network")
+                run_all=false
+                shift
+                ;;
+            --system)
+                selected_modules+=("system")
+                run_all=false
+                shift
+                ;;
+            --help|-h)
+                cat <<EOF
+VaultWarden-OCI Monitor Script
+
+Usage: $0 [OPTIONS]
+
+Options:
+    --logs              Show recent logs
+    --log-lines N       Number of log lines to show (default: 10)
+    --live              Live monitoring mode
+    --refresh N         Refresh interval for live mode (default: 5s)
+    --status            Show only service status
+    --resources         Show only resource usage
+    --disk              Show only disk usage
+    --network           Show only network status
+    --system            Show only system information
+    --help, -h          Show this help message
+
+Examples:
+    $0                          # Show all monitoring info
+    $0 --logs --log-lines 20    # Show status with 20 lines of logs
+    $0 --live --refresh 3       # Live monitoring with 3s refresh
+    $0 --status --resources     # Show only status and resources
+
+EOF
+                exit 0
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                ;;
+        esac
+    done
+    
+    # Live monitoring mode
+    if [[ "$live_mode" == "true" ]]; then
+        live_monitor "$refresh_interval"
+        exit 0
     fi
-done
+    
+    # Static monitoring
+    echo -e "${BOLD}${BLUE}VaultWarden-OCI Monitor${NC}"
+    echo "Generated at: $(date)"
+    echo "=============================================="
+    echo ""
+    
+    # Run selected modules or all
+    if [[ "$run_all" == "true" ]]; then
+        selected_modules=("system" "status" "resources" "disk" "network")
+        if [[ "$show_logs" == "true" ]]; then
+            selected_modules+=("logs")
+        fi
+    else
+        if [[ "$show_logs" == "true" ]]; then
+            selected_modules+=("logs")
+        fi
+    fi
+    
+    for module in "${selected_modules[@]}"; do
+        case "$module" in
+            "system") show_system_info ;;
+            "status") show_service_status ;;
+            "resources") show_resource_usage ;;
+            "disk") show_disk_usage ;;
+            "network") show_network_status ;;
+            "logs") show_recent_logs "$log_lines" ;;
+            *) log_warning "Unknown monitoring module: $module" ;;
+        esac
+    done
+    
+    echo "=============================================="
+    log_info "Monitor complete!"
+    log_info "Run '$0 --live' for continuous monitoring"
+    log_info "Run './diagnose.sh' for troubleshooting"
+}
 
-echo ""
-echo -e "${BLUE}💾 Disk Usage:${NC}"
-df -h ./data/ 2>/dev/null || echo "Data directory not found"
-
-echo ""
-echo -e "${BLUE}🌐 Network Status:${NC}"
-docker network ls --filter name=vaultward --format "table {{.Name}}\t{{.Driver}}\t{{.Scope}}"
-
-echo ""
-echo -e "${BLUE}📦 Docker Compose Status:${NC}"
-docker compose ps
-
-echo ""
-echo -e "${GREEN}Monitor complete!${NC}"
+# Execute main function
+main "$@"
