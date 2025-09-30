@@ -64,8 +64,6 @@ Create the required data directories before launching containers:
 # Create all required data directories
 mkdir -p ./data/{bwdata,mariadb,redis,caddy_data,caddy_config,caddy_logs,backups,backup_logs,fail2ban}
 
-# Create backup-specific directories
-mkdir -p ./backup/rclone_config
 ```
 
 ### **Install Docker and Docker Compose (ARM64)**
