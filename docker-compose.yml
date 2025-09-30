@@ -257,16 +257,13 @@ services:
       dockerfile: Dockerfile
     image: bitwarden_backup:latest
     container_name: bw_backup
+    restart: unless-stopped
     env_file:
       - ./settings.env
     volumes:
       - ./data/backups:/backups:rw
       - ./data/backup_logs:/var/log/backup:rw
-      - ./data/bwdata:/data:ro
-      - ./data/mariadb:/var/lib/mysql:ro
-      - ./backup/rclone.conf:/root/.config/rclone/rclone.conf:ro
-    entrypoint: ["/usr/sbin/cron", "-f"]
-    restart: "unless-stopped"
+      - ./backup/rclone.conf:/home/backup/.config/rclone/rclone.conf:ro
     networks:
       - bw_net
     depends_on:
@@ -274,12 +271,27 @@ services:
         condition: service_healthy
       bw_mariadb:
         condition: service_healthy
+      bw_redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pgrep cron >/dev/null && test -w /backups || exit 1"]
-      interval: 60m
+      test: ["CMD-SHELL", "pgrep crond >/dev/null && test -w /backups && mysqladmin ping -h bw_mariadb -u${MARIADB_USER} -p${MARIADB_PASSWORD} --silent || exit 1"]
+      interval: 30m
       timeout: 15s
-      retries: 2
+      retries: 3
       start_period: 120s
+    environment:
+      # Database backup configuration
+      - BACKUP_DIR=/backups
+      - LOG_DIR=/var/log/backup
+      - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_PASSPHRASE=${BACKUP_PASSPHRASE}
+      - BACKUP_REMOTE=${BACKUP_REMOTE:-}
+      - BACKUP_PATH=${BACKUP_PATH:-vaultwarden-backups}
+      - BACKUP_EMAIL=${BACKUP_EMAIL:-}
+      # Database connection
+      - MARIADB_USER=${MARIADB_USER}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
     deploy:
       resources:
         limits:
@@ -295,7 +307,7 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-        labels: "service=backup"
+        labels: "service=db-backup"
 
   bw_watchtower:
     image: containrrr/watchtower:latest
