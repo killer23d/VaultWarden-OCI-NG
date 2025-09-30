@@ -1,6 +1,6 @@
 FROM alpine:latest
 
-# Install required packages
+# Install required packages (rclone is included but won't break if misconfigured)
 RUN apk add --no-cache \
     bash \
     mysql-client \
@@ -19,13 +19,17 @@ RUN apk add --no-cache \
 RUN addgroup -S backup && adduser -S backup -G backup
 
 # Set up directories
-RUN mkdir -p /backups /var/log/backup /etc/crontabs
-RUN chown -R backup:backup /backups /var/log/backup
+RUN mkdir -p /backups /var/log/backup /etc/crontabs /home/backup/.config/rclone
+RUN chown -R backup:backup /backups /var/log/backup /home/backup
 
 # Copy scripts
 COPY db-backup.sh /backup/db-backup.sh
 COPY restore.sh /backup/restore.sh
 RUN chmod +x /backup/*.sh
+
+# Create empty rclone config if none exists (prevents startup failures)
+RUN touch /home/backup/.config/rclone/rclone.conf && \
+    chown backup:backup /home/backup/.config/rclone/rclone.conf
 
 # Set up cron job for automated database backups
 RUN echo "0 2 * * * /backup/db-backup.sh" > /etc/crontabs/root
