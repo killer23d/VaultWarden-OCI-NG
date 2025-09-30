@@ -5,7 +5,7 @@ services:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "1000:1000"
     env_file:
       - ./settings.env
     volumes:
@@ -14,25 +14,25 @@ services:
       - bw_net
     depends_on:
       bw_mariadb:
-        condition: service_healthy
+        condition: service_healthy  # MUST be healthy - VaultWarden cannot start without DB
       bw_redis:
-        condition: service_healthy
+        condition: service_healthy  # MUST be healthy - VaultWarden needs cache
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/alive || exit 1"]
-      interval: 3m
+      interval: 2m
       timeout: 15s
       retries: 3
       start_period: 60s
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 512M
           cpus: '0.5'
         reservations:
-          memory: 384M
+          memory: 256M
           cpus: '0.25'
     environment:
-      - DATABASE_URL=mysql://${MARIADB_USER}:${MARIADB_PASSWORD}@bw_mariadb:3306/${MARIADB_DATABASE}
+      - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@bw_redis:6379
       - ROCKET_WORKERS=${VAULTWARDEN_WORKERS:-2}
       - DATABASE_MAX_CONNS=${DATABASE_MAX_CONNECTIONS:-15}
@@ -47,7 +47,7 @@ services:
     image: mariadb:11-jammy
     container_name: bw_mariadb
     restart: unless-stopped
-    user: "999:999"  # Security separation - database user
+    user: "1000:1000"
     env_file:
       - ./settings.env
     environment:
@@ -55,7 +55,6 @@ services:
       MYSQL_DATABASE: ${MARIADB_DATABASE}
       MYSQL_USER: ${MARIADB_USER}
       MYSQL_PASSWORD: ${MARIADB_PASSWORD}
-      # Performance optimizations for OCI A1 Flex
       MYSQL_INITDB_SKIP_TZINFO: 1
     volumes:
       - ./data/mariadb:/var/lib/mysql:rw
@@ -63,7 +62,7 @@ services:
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
-      --innodb-buffer-pool-size=512M
+      --innodb-buffer-pool-size=384M
       --innodb-log-file-size=128M
       --innodb-flush-log-at-trx-commit=2
       --innodb-flush-method=O_DIRECT
@@ -75,7 +74,7 @@ services:
       --key-buffer-size=32M
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u${MARIADB_USER} -p${MARIADB_PASSWORD} --silent || exit 1"]
-      interval: 5m
+      interval: 30s  # Fast for dependency resolution
       timeout: 15s
       retries: 5
       start_period: 120s
@@ -84,7 +83,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1.5G
+          memory: 1G
           cpus: '0.5'
         reservations:
           memory: 512M
@@ -100,7 +99,7 @@ services:
     image: redis:7-alpine
     container_name: bw_redis
     restart: unless-stopped
-    user: "999:999"  # Security separation - cache user
+    user: "1000:1000"
     env_file:
       - ./settings.env
     volumes:
@@ -109,7 +108,7 @@ services:
     command: ["redis-server", "/etc/redis/redis.conf", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 2m
+      interval: 30s  # Fast for dependency resolution
       timeout: 10s
       retries: 3
       start_period: 30s
@@ -134,7 +133,7 @@ services:
     image: caddy:2-alpine
     container_name: bw_caddy
     restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "1000:1000"
     env_file:
       - ./settings.env
     volumes:
@@ -148,9 +147,9 @@ services:
       - "443:443"
     depends_on:
       vaultwarden:
-        condition: service_healthy
+        condition: service_started  # Relaxed - Caddy will retry connection to VaultWarden
     healthcheck:
-      test: ["CMD-SHELL", "caddy validate --config /etc/caddy/Caddyfile || exit 1"]
+      test: ["CMD-SHELL", "caddy validate --config /etc/caddy/Caddyfile && curl -f http://vaultwarden:80/alive || exit 1"]
       interval: 5m
       timeout: 15s
       retries: 3
@@ -189,8 +188,8 @@ services:
     cap_add:
       - NET_ADMIN
     environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      - PUID=1000
+      - PGID=1000
       - VERBOSITY=-vv
     healthcheck:
       test: ["CMD-SHELL", "fail2ban-client ping >/dev/null 2>&1 || exit 1"]
@@ -202,9 +201,7 @@ services:
       - bw_net
     depends_on:
       bw_caddy:
-        condition: service_started
-      vaultwarden:
-        condition: service_healthy
+        condition: service_started  # Relaxed - Fail2ban will wait for log files to appear
     deploy:
       resources:
         limits:
@@ -236,6 +233,9 @@ services:
       start_period: 60s
     networks:
       - bw_net
+    environment:
+      - PUID=1000
+      - PGID=1000
     deploy:
       resources:
         limits:
@@ -258,30 +258,25 @@ services:
     image: bitwarden_backup:latest
     container_name: bw_backup
     restart: unless-stopped
+    user: "1000:1000"
     env_file:
       - ./settings.env
     volumes:
       - ./data/backups:/backups:rw
       - ./data/backup_logs:/var/log/backup:rw
-      # Mount rclone config if it exists, otherwise use empty config
-      - ${PWD}/backup/rclone.conf:/home/backup/.config/rclone/rclone.conf:ro
+      - ./backup/rclone.conf:/home/backup/.config/rclone/rclone.conf:ro
     networks:
       - bw_net
     depends_on:
-      vaultwarden:
-        condition: service_healthy
       bw_mariadb:
-        condition: service_healthy
-      bw_redis:
-        condition: service_healthy
+        condition: service_healthy  # MUST be healthy - backup needs working database
     healthcheck:
-      test: ["CMD-SHELL", "pgrep crond >/dev/null && test -w /backups && mysqladmin ping -h bw_mariadb -u${MARIADB_USER} -p${MARIADB_PASSWORD} --silent 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "pgrep crond >/dev/null && test -w /backups || exit 1"]
       interval: 30m
       timeout: 15s
       retries: 3
       start_period: 120s
     environment:
-      # Database backup configuration
       - BACKUP_DIR=/backups
       - LOG_DIR=/var/log/backup
       - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
@@ -289,17 +284,16 @@ services:
       - BACKUP_REMOTE=${BACKUP_REMOTE:-}
       - BACKUP_PATH=${BACKUP_PATH:-vaultwarden-backups}
       - BACKUP_EMAIL=${BACKUP_EMAIL:-}
-      # Database connection
       - MARIADB_USER=${MARIADB_USER}
       - MARIADB_PASSWORD=${MARIADB_PASSWORD}
       - MARIADB_DATABASE=${MARIADB_DATABASE}
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 256M
           cpus: '0.5'
         reservations:
-          memory: 256M
+          memory: 128M
           cpus: '0.25'
     profiles:
       - backup
@@ -323,7 +317,6 @@ services:
       - WATCHTOWER_NOTIFICATIONS_LEVEL=info
       - WATCHTOWER_INCLUDE_STOPPED=false
       - WATCHTOWER_REVIVE_STOPPED=false
-      # Exclude backup service from auto-updates to prevent interruption
       - WATCHTOWER_LABEL_ENABLE=true
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
@@ -344,11 +337,11 @@ services:
         max-file: "2"
         labels: "service=watchtower"
 
-  # Log management service
   bw_logrotate:
     image: alpine:latest
     container_name: bw_logrotate
     restart: unless-stopped
+    user: "1000:1000"
     volumes:
       - ./data/caddy_logs:/var/log/caddy:rw
       - ./data/backup_logs:/var/log/backup:rw
@@ -387,6 +380,3 @@ networks:
     ipam:
       config:
         - subnet: 172.20.0.0/24
-
-# Define profiles for optional services
-# Usage: docker compose --profile backup up -d
