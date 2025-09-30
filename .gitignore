@@ -1,23 +1,52 @@
 # .gitignore
 
-# Ignore the main environment file which contains all secrets.
-# This is the most critical file to ignore.
+# === CRITICAL SECURITY FILES ===
+# Main environment file containing all secrets and passwords
 settings.env
-
-# Ignore the rclone configuration file, as it contains
-# API keys and secrets for your cloud storage provider.
+# Backup encryption keys and cloud storage credentials
 backup/rclone.conf
 
-# Ignore the generated fail2ban configuration. This file is created
-# by the startup.sh script from the .template file and will
-# contain your email address.
+# === GENERATED CONFIGURATION FILES ===
+# Generated fail2ban configuration from template
 fail2ban/jail.d/jail.local
+# Generated Cloudflare IP files (will be auto-created)
+caddy/cloudflare_ips.caddy
+caddy/cloudflare_ips.txt
 
-# Ignore temporary directories created during the restore process.
+# === RUNTIME DATA DIRECTORIES ===
+# All persistent data should be in data/ directory
+data/
+# Temporary directories created during restore process
 bwrestore.*
+# Temporary files created by scripts
+*.tmp
+*.temp
 
-# Ignore log files that might be generated in the project directory.
+# === LOG AND OUTPUT FILES ===
+# Script log files
 *.log
-
-# Ignore the OCI setup log file which contains OCIDs.
+# OCI setup logs containing sensitive OCIDs
 oci_vault_setup_*.log
+# Backup logs that might contain sensitive information
+backup_*.log
+
+# === DEVELOPMENT AND IDE FILES ===
+# Common editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# === DOCKER DEVELOPMENT ===
+# Development docker overrides
+docker-compose.override.yml
+docker-compose.dev.yml
+
+# === SSL CERTIFICATES (if manually managed) ===
+# SSL certificates should be managed by Caddy automatically
+*.crt
+*.key
+*.pem
