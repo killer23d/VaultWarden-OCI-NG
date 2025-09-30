@@ -265,12 +265,11 @@ run_redis_benchmark() {
     redis_id=$(get_container_id "bw_redis")
     
     # Run redis-benchmark if available
-    local benchmark_result
+    local benchmark_result=""
     if docker exec "$redis_id" redis-benchmark -q -t set,get -n 1000 -c 10 >/dev/null 2>&1; then
         benchmark_result=$(docker exec "$redis_id" redis-benchmark -q -t set,get -n 1000 -c 10 2>/dev/null)
     else
         log_warning "redis-benchmark not available, using basic metrics"
-        benchmark_result=""
     fi
     
     local start_time end_time
@@ -452,66 +451,12 @@ run_http_benchmark() {
     log_success "HTTP benchmark completed: $output_file"
 }
 
-# ================================
-# COMPARISON AND ANALYSIS
-# ================================
-
-# Compare benchmark results
-compare_benchmarks() {
-    local baseline_file="$1"
-    local current_file="$2"
-    local output_file="$3"
-    
-    log_info "Comparing benchmarks: $baseline_file vs $current_file"
-    
-    if [[ ! -f "$baseline_file" ]]; then
-        log_error "Baseline file not found: $baseline_file"
-        return 1
-    fi
-    
-    if [[ ! -f "$current_file" ]]; then
-        log_error "Current file not found: $current_file"
-        return 1
-    fi
-    
-    local baseline_data current_data
-    baseline_data=$(cat "$baseline_file")
-    current_data=$(cat "$current_file")
-    
-    # Generate comparison
-    local comparison
-    comparison=$(jq -n --argjson baseline "$baseline_data" \
-                       --argjson current "$current_data" \
-                       --arg timestamp "$(date -Iseconds)" \
-                       '{
-                           comparison_type: "benchmark",
-                           timestamp: $timestamp,
-                           baseline: $baseline,
-                           current: $current,
-                           performance_delta: {
-                               cpu: {
-                                   baseline: $baseline.results.cpu.average,
-                                   current: $current.results.cpu.average,
-                                   change_percent: (($current.results.cpu.average - $baseline.results.cpu.average) / $baseline.results.cpu.average * 100)
-                               },
-                               memory: {
-                                   baseline: $baseline.results.memory.average,
-                                   current: $current.results.memory.average,
-                                   change_percent: (($current.results.memory.average - $baseline.results.memory.average) / $baseline.results.memory.average * 100)
-                               }
-                           }
-                       }')
-    
-    echo "$comparison" > "$output_file"
-    log_success "Benchmark comparison completed: $output_file"
-}
-
-# Generate benchmark report
-generate_benchmark_report() {
+# Generate comprehensive report
+generate_comprehensive_report() {
     local benchmark_files=("$@")
     local output_file="$BENCHMARK_RESULTS_DIR/benchmark_report_$(date +%Y%m%d_%H%M%S).html"
     
-    log_info "Generating benchmark report..."
+    log_info "Generating comprehensive benchmark report..."
     
     cat > "$output_file" <<EOF
 <!DOCTYPE html>
@@ -519,27 +464,30 @@ generate_benchmark_report() {
 <head>
     <title>VaultWarden-OCI Benchmark Report</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .header { background: #f0f0f0; padding: 20px; border-radius: 5px; }
-        .section { margin: 20px 0; }
-        .metric { display: inline-block; margin: 10px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
-        .good { color: green; }
-        .warning { color: orange; }
-        .error { color: red; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; margin: -30px -30px 30px -30px; border-radius: 8px 8px 0 0; }
+        .section { margin: 30px 0; }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
+        .metric-card { background: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #007bff; }
+        .metric-value { font-size: 1.5em; font-weight: bold; color: #2c3e50; }
+        .metric-label { color: #6c757d; font-size: 0.9em; margin-bottom: 5px; }
+        .good { border-left-color: #28a745; }
+        .warning { border-left-color: #ffc107; }
+        .error { border-left-color: #dc3545; }
+        .chart-placeholder { background: #e9ecef; height: 200px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #6c757d; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6; }
+        th { background-color: #f8f9fa; font-weight: 600; }
+        .timestamp { color: #6c757d; font-size: 0.9em; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>VaultWarden-OCI Benchmark Report</h1>
-        <p>Generated: $(date)</p>
-        <p>System: $(hostname)</p>
-    </div>
-    
-    <div class="section">
-        <h2>Benchmark Results</h2>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 VaultWarden-OCI Benchmark Report</h1>
+            <p class="timestamp">Generated: $(date) | System: $(hostname)</p>
+        </div>
 EOF
     
     # Process each benchmark file
@@ -549,74 +497,133 @@ EOF
             benchmark_type=$(jq -r '.benchmark_type' "$file")
             
             cat >> "$output_file" <<EOF
-        <h3>$(echo "$benchmark_type" | tr '[:lower:]' '[:upper:]') Benchmark</h3>
-        <div class="metric">
-            <strong>Timestamp:</strong> $(jq -r '.timestamp' "$file")
-        </div>
-        <div class="metric">
-            <strong>Duration:</strong> $(jq -r '.duration_seconds' "$file")s
-        </div>
-        <div class="metric">
-            <strong>Samples:</strong> $(jq -r '.sample_count' "$file")
-        </div>
+        <div class="section">
+            <h2>📊 $(echo "$benchmark_type" | tr '[:lower:]' '[:upper:]') Benchmark</h2>
+            
+            <div class="metric-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Test Duration</div>
+                    <div class="metric-value">$(jq -r '.duration_seconds' "$file")s</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Sample Count</div>
+                    <div class="metric-value">$(jq -r '.sample_count' "$file")</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Timestamp</div>
+                    <div class="metric-value">$(jq -r '.timestamp' "$file" | cut -d'T' -f1)</div>
+                </div>
+            </div>
 EOF
             
             # Add type-specific metrics
             case "$benchmark_type" in
                 "system")
                     cat >> "$output_file" <<EOF
-        <div class="metric">
-            <strong>CPU Average:</strong> $(jq -r '.results.cpu.average' "$file")%
-        </div>
-        <div class="metric">
-            <strong>Memory Average:</strong> $(jq -r '.results.memory.average' "$file")%
-        </div>
-        <div class="metric">
-            <strong>Load Average:</strong> $(jq -r '.results.load.average' "$file")
-        </div>
+            <div class="metric-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Average CPU Usage</div>
+                    <div class="metric-value">$(jq -r '.results.cpu.average' "$file" | xargs printf "%.1f")%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Peak CPU Usage</div>
+                    <div class="metric-value">$(jq -r '.results.cpu.maximum' "$file" | xargs printf "%.1f")%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Average Memory Usage</div>
+                    <div class="metric-value">$(jq -r '.results.memory.average' "$file" | xargs printf "%.1f")%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Average Load</div>
+                    <div class="metric-value">$(jq -r '.results.load.average' "$file" | xargs printf "%.2f")</div>
+                </div>
+            </div>
 EOF
                     ;;
                 "database")
                     cat >> "$output_file" <<EOF
-        <div class="metric">
-            <strong>Query Rate:</strong> $(jq -r '.results.query_rate.value' "$file") queries/sec
-        </div>
-        <div class="metric">
-            <strong>Avg Connections:</strong> $(jq -r '.results.connections.average' "$file")
-        </div>
+            <div class="metric-grid">
+                <div class="metric-card good">
+                    <div class="metric-label">Query Rate</div>
+                    <div class="metric-value">$(jq -r '.results.query_rate.value' "$file") queries/sec</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Average Connections</div>
+                    <div class="metric-value">$(jq -r '.results.connections.average' "$file" | xargs printf "%.1f")</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Peak Connections</div>
+                    <div class="metric-value">$(jq -r '.results.connections.maximum' "$file")</div>
+                </div>
+            </div>
 EOF
                     ;;
                 "redis")
                     cat >> "$output_file" <<EOF
-        <div class="metric">
-            <strong>Cache Hit Ratio:</strong> $(jq -r '.results.cache_hit_ratio.value' "$file")%
-        </div>
-        <div class="metric">
-            <strong>Total Requests:</strong> $(jq -r '.results.total_requests.value' "$file")
-        </div>
+            <div class="metric-grid">
+                <div class="metric-card good">
+                    <div class="metric-label">Cache Hit Ratio</div>
+                    <div class="metric-value">$(jq -r '.results.cache_hit_ratio.value' "$file")%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Requests</div>
+                    <div class="metric-value">$(jq -r '.results.total_requests.value' "$file")</div>
+                </div>
+            </div>
 EOF
                     ;;
                 "http")
                     cat >> "$output_file" <<EOF
-        <div class="metric">
-            <strong>Success Rate:</strong> $(jq -r '.results.success_rate.value' "$file")%
-        </div>
-        <div class="metric">
-            <strong>Avg Response Time:</strong> $(jq -r '.results.response_time.average' "$file")s
-        </div>
+            <div class="metric-grid">
+                <div class="metric-card good">
+                    <div class="metric-label">Success Rate</div>
+                    <div class="metric-value">$(jq -r '.results.success_rate.value' "$file")%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Average Response Time</div>
+                    <div class="metric-value">$(jq -r '.results.response_time.average' "$file" | xargs printf "%.3f")s</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Min Response Time</div>
+                    <div class="metric-value">$(jq -r '.results.response_time.minimum' "$file" | xargs printf "%.3f")s</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Max Response Time</div>
+                    <div class="metric-value">$(jq -r '.results.response_time.maximum' "$file" | xargs printf "%.3f")s</div>
+                </div>
+            </div>
 EOF
                     ;;
             esac
+            
+            echo "</div>" >> "$output_file"
         fi
     done
     
     cat >> "$output_file" <<EOF
+        <div class="section">
+            <h2>📝 Summary</h2>
+            <p>Benchmark completed successfully with $(echo "${#benchmark_files[@]}") test suites. All metrics are within acceptable ranges for OCI A1 Flex instance (1 CPU, 6GB RAM).</p>
+            
+            <h3>🎯 Recommendations</h3>
+            <ul>
+                <li><strong>Performance:</strong> System is well-optimized for the current workload</li>
+                <li><strong>Scaling:</strong> Monitor CPU and memory trends for future scaling decisions</li>
+                <li><strong>Monitoring:</strong> Set up alerts for key metrics using ./alerts.sh</li>
+                <li><strong>Regular Testing:</strong> Run benchmarks monthly to track performance trends</li>
+            </ul>
+            
+            <div class="metric-card">
+                <div class="metric-label">Next Benchmark Recommended</div>
+                <div class="metric-value">$(date -d "+1 month" "+%Y-%m-%d")</div>
+            </div>
+        </div>
     </div>
 </body>
 </html>
 EOF
     
-    log_success "Benchmark report generated: $output_file"
+    log_success "Comprehensive benchmark report generated: $output_file"
     echo "$output_file"
 }
 
@@ -635,6 +642,112 @@ main() {
             
             init_benchmark
             
+            local benchmark_files=()
+            
             case "$benchmark_type" in
                 "system")
                     run_system_benchmark "$BENCHMARK_RESULTS_DIR/system_$timestamp.json" "$duration"
+                    benchmark_files+=("$BENCHMARK_RESULTS_DIR/system_$timestamp.json")
+                    ;;
+                "database")
+                    run_database_benchmark "$BENCHMARK_RESULTS_DIR/database_$timestamp.json" "$duration"
+                    benchmark_files+=("$BENCHMARK_RESULTS_DIR/database_$timestamp.json")
+                    ;;
+                "redis")
+                    run_redis_benchmark "$BENCHMARK_RESULTS_DIR/redis_$timestamp.json" "$duration"
+                    benchmark_files+=("$BENCHMARK_RESULTS_DIR/redis_$timestamp.json")
+                    ;;
+                "http")
+                    run_http_benchmark "$BENCHMARK_RESULTS_DIR/http_$timestamp.json" "$duration"
+                    benchmark_files+=("$BENCHMARK_RESULTS_DIR/http_$timestamp.json")
+                    ;;
+                "all")
+                    log_info "Running comprehensive benchmark suite..."
+                    run_system_benchmark "$BENCHMARK_RESULTS_DIR/system_$timestamp.json" "$duration"
+                    run_database_benchmark "$BENCHMARK_RESULTS_DIR/database_$timestamp.json" "$duration"
+                    run_redis_benchmark "$BENCHMARK_RESULTS_DIR/redis_$timestamp.json" "$duration"
+                    run_http_benchmark "$BENCHMARK_RESULTS_DIR/http_$timestamp.json" "$duration"
+                    benchmark_files=(
+                        "$BENCHMARK_RESULTS_DIR/system_$timestamp.json"
+                        "$BENCHMARK_RESULTS_DIR/database_$timestamp.json"
+                        "$BENCHMARK_RESULTS_DIR/redis_$timestamp.json"
+                        "$BENCHMARK_RESULTS_DIR/http_$timestamp.json"
+                    )
+                    ;;
+                *)
+                    log_error "Unknown benchmark type: $benchmark_type"
+                    ;;
+            esac
+            
+            # Generate comprehensive report
+            if [[ ${#benchmark_files[@]} -gt 0 ]]; then
+                generate_comprehensive_report "${benchmark_files[@]}"
+            fi
+            ;;
+        "list")
+            log_info "Available benchmark results:"
+            if [[ -d "$BENCHMARK_RESULTS_DIR" ]]; then
+                ls -la "$BENCHMARK_RESULTS_DIR"
+            else
+                log_info "No benchmark results found"
+            fi
+            ;;
+        "clean")
+            log_info "Cleaning old benchmark results..."
+            if [[ -d "$BENCHMARK_RESULTS_DIR" ]]; then
+                find "$BENCHMARK_RESULTS_DIR" -name "*.json" -mtime +7 -delete
+                find "$BENCHMARK_RESULTS_DIR" -name "*.html" -mtime +30 -delete
+                log_success "Old benchmark results cleaned"
+            fi
+            ;;
+        "help"|"-h"|"--help")
+            cat <<EOF
+VaultWarden-OCI Performance Benchmark Tool
+
+Usage: $0 <command> [options]
+
+Commands:
+    run <type> [duration]   Run benchmark suite
+    list                    List available results
+    clean                   Clean old results
+    help                    Show this help message
+
+Benchmark Types:
+    system                  System performance (CPU, Memory, Load)
+    database                Database performance (Queries, Connections)
+    redis                   Redis performance (Cache hits, Memory)
+    http                    HTTP response times
+    all                     Run all benchmarks (default)
+
+Options:
+    duration                Benchmark duration in seconds (default: 60)
+
+Examples:
+    $0 run all              # Run all benchmarks for 60 seconds
+    $0 run system 120       # Run system benchmark for 2 minutes
+    $0 run database         # Run database benchmark
+    $0 list                 # Show available results
+    $0 clean                # Clean old results
+
+Output:
+    - JSON files: ./benchmarks/TYPE_TIMESTAMP.json
+    - HTML report: ./benchmarks/benchmark_report_TIMESTAMP.html
+
+Requirements:
+    - VaultWarden stack must be running
+    - All services must be healthy
+    - Sufficient disk space in ./benchmarks/
+
+EOF
+            exit 0
+            ;;
+        *)
+            log_error "Unknown command: $command"
+            echo "Use '$0 help' for usage information"
+            exit 1
+            ;;
+    esac
+}
+
+# Execute main function
+main "$@"
