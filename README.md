@@ -17,7 +17,7 @@ The stack is designed with a security-first approach and includes the following 
 
 ## **⚠️ Important Configuration Notice**
 
-This project requires manual configuration before its first use. It will not work by simply cloning the repository and running it. You must create and modify several key files which contain your specific domain information and secrets.
+This project requires manual configuration before its first use. It will not work by simply cloning the repository and running it. You must create and modify several key files which contain your specific domain information and secrets. Please also check the Wiki for additional information and troubleshooting.
 
 The most critical files that you **must** create or configure are:
 
@@ -31,9 +31,7 @@ Please follow the **Setup Instructions** below carefully to ensure all necessary
 
 ### **Hardware Requirements**
 
-* **Minimum**: 1 vCPUs, 4GB RAM, 20GB disk space
-* **Recommended**: 4 vCPUs, 6GB RAM, 50GB disk space
-* **Oracle A1 Flex**: 1 OCPU ARM64, 6GB RAM (free tier) - excellent choice
+* **Oracle A1 Flex**: 1 OCPU ARM64, 6GB RAM (free tier)
 
 
 ### **Software Prerequisites**
