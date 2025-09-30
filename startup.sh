@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# startup.sh -- Secure startup with profile handling
+# startup.sh -- Secure startup with profile handling and security separation
 
 set -euo pipefail
 
@@ -90,10 +90,9 @@ validate_environment() {
         fi
     done
     
-    # Ensure data directories have correct ownership
-    log_info "Setting data directory permissions..."
+    # Ensure data directories have correct ownership for security separation
+    log_info "Setting data directory permissions for security separation..."
     if [[ -d "./data" ]]; then
-        # Set ownership to 1000:1000 for consistency with containers
         if command -v chown >/dev/null 2>&1; then
             if [[ $(id -u) -eq 0 ]] || sudo -n chown --help >/dev/null 2>&1; then
                 local chown_cmd=""
@@ -101,11 +100,32 @@ validate_environment() {
                     chown_cmd="sudo "
                 fi
                 
-                ${chown_cmd}chown -R 1000:1000 ./data 2>/dev/null || log_warning "Could not set data directory ownership"
+                # Create directories if they don't exist
+                mkdir -p ./data/{bwdata,caddy_data,caddy_config,caddy_logs,backups,backup_logs,mariadb,redis,fail2ban}
+                
+                # User service directories (PUID:PGID, defaulting to 1000:1000)
+                local puid="${PUID:-1000}"
+                local pgid="${PGID:-1000}"
+                
+                ${chown_cmd}chown -R ${puid}:${pgid} ./data/bwdata 2>/dev/null || log_warning "Could not set bwdata directory ownership"
+                ${chown_cmd}chown -R ${puid}:${pgid} ./data/caddy_data ./data/caddy_config ./data/caddy_logs 2>/dev/null || log_warning "Could not set caddy directory ownership"
+                ${chown_cmd}chown -R ${puid}:${pgid} ./data/backups ./data/backup_logs 2>/dev/null || log_warning "Could not set backup directory ownership"
+                ${chown_cmd}chown -R ${puid}:${pgid} ./data/fail2ban 2>/dev/null || log_warning "Could not set fail2ban directory ownership"
+                
+                # System service directories (999:999)
+                ${chown_cmd}chown -R 999:999 ./data/mariadb 2>/dev/null || log_warning "Could not set mariadb directory ownership"
+                ${chown_cmd}chown -R 999:999 ./data/redis 2>/dev/null || log_warning "Could not set redis directory ownership"
+                
+                # General permissions
                 ${chown_cmd}chmod -R 755 ./data 2>/dev/null || log_warning "Could not set data directory permissions"
-                log_success "Data directory permissions updated"
+                
+                log_success "Data directory permissions updated with security separation"
+                log_info "User services (${puid}:${pgid}): bwdata, caddy_*, backups, backup_logs, fail2ban"
+                log_info "System services (999:999): mariadb, redis"
             else
-                log_warning "Cannot set data directory ownership - ensure ./data is owned by UID 1000"
+                log_warning "Cannot set data directory ownership - ensure correct permissions manually"
+                echo "User services (PUID:PGID): ./data/bwdata, ./data/caddy_*, ./data/backups, ./data/backup_logs, ./data/fail2ban"
+                echo "System services (999:999): ./data/mariadb, ./data/redis"
             fi
         fi
     fi
@@ -247,6 +267,24 @@ load_environment() {
     # Validate DATABASE_URL format
     if [[ ! "$DATABASE_URL" =~ mysql://.*@bw_mariadb:3306/ ]]; then
         log_error "DATABASE_URL format incorrect. Should be: mysql://user:pass@bw_mariadb:3306/database"
+    fi
+    
+    # Validate that DATABASE_URL components match other variables
+    local db_user_in_url db_pass_in_url db_name_in_url
+    db_user_in_url=$(echo "$DATABASE_URL" | sed -n 's|mysql://\([^:]*\):.*|\1|p')
+    db_pass_in_url=$(echo "$DATABASE_URL" | sed -n 's|mysql://[^:]*:\([^@]*\)@.*|\1|p')
+    db_name_in_url=$(echo "$DATABASE_URL" | sed -n 's|.*/\([^/]*\)$|\1|p')
+    
+    if [[ "$db_user_in_url" != "$MARIADB_USER" ]]; then
+        log_error "DATABASE_URL username ($db_user_in_url) does not match MARIADB_USER ($MARIADB_USER)"
+    fi
+    
+    if [[ "$db_pass_in_url" != "$MARIADB_PASSWORD" ]]; then
+        log_error "DATABASE_URL password does not match MARIADB_PASSWORD"
+    fi
+    
+    if [[ "$db_name_in_url" != "$MARIADB_DATABASE" ]]; then
+        log_error "DATABASE_URL database ($db_name_in_url) does not match MARIADB_DATABASE ($MARIADB_DATABASE)"
     fi
     
     # Set the environment file for docker-compose
@@ -394,6 +432,16 @@ start_containers() {
     else
         echo -e "  ${BLUE}○${NC} bw_backup: disabled (no backup configuration)"
     fi
+    
+    # Show additional services status
+    local additional_services=("bw_caddy" "bw_fail2ban")
+    for service in "${additional_services[@]}"; do
+        if is_service_running "$service"; then
+            echo -e "  ${GREEN}●${NC} $service: running"
+        else
+            echo -e "  ${YELLOW}●${NC} $service: starting up"
+        fi
+    done
 }
 
 # Post-deployment checks and information
@@ -405,7 +453,7 @@ post_deployment() {
     
     # Test basic connectivity
     local vw_container_id
-    vw_container_id=$(docker compose ps -q vaultwarden)
+    vw_container_id=$(docker compose ps -q vaultwarden 2>/dev/null || echo "")
     
     if [[ -n "$vw_container_id" ]]; then
         if docker exec "$vw_container_id" curl -f http://localhost:80/alive --max-time 10 >/dev/null 2>&1; then
@@ -426,19 +474,37 @@ post_deployment() {
     echo "  URL:        ${DOMAIN:-'http://localhost'}"
     echo "  Admin URL:  ${DOMAIN:-'http://localhost'}/admin"
     echo ""
+    echo -e "${BLUE}Security Configuration:${NC}"
+    echo "  User Services (PUID ${PUID:-1000}): vaultwarden, caddy, backup, logrotate"
+    echo "  System Services (UID 999): mariadb, redis"
+    echo "  Security separation: ✓ Enabled"
+    echo ""
     echo -e "${BLUE}Memory Allocation (OCI A1 Optimized):${NC}"
     echo "  VaultWarden:    512MB"
     echo "  MariaDB:        1GB"
     echo "  Redis:          256MB"
-    echo "  Other services: ~1GB"
-    echo "  Total:          ~3.8GB (within 6GB limit)"
+    echo "  Caddy:          256MB"
+    echo "  Other services: ~512MB"
+    echo "  Total:          ~2.5GB (within 6GB limit with buffer)"
     echo ""
     echo -e "${BLUE}Management Commands:${NC}"
     echo "  Dashboard:       ./dashboard.sh"
     echo "  Performance:     ./perf-monitor.sh status"
     echo "  Diagnostics:     ./diagnose.sh"
     echo "  Alerts:          ./alerts.sh status"
-    echo "  Database Backup: docker compose exec bw_backup /backup/db-backup.sh -n"
+    echo "  Benchmark:       ./benchmark.sh run all"
+    echo ""
+    echo -e "${BLUE}Backup & Restore:${NC}"
+    if [[ "$ENABLE_BACKUP_PROFILE" == "true" ]]; then
+        echo "  Status:          ✓ Enabled (automated daily backups)"
+        echo "  Manual backup:   docker compose exec bw_backup /backup/db-backup.sh --force"
+        echo "  Backup location: ./data/backups/"
+        echo "  Database restore: ./backup/db-restore.sh"
+        echo "  Verify backups:  ./backup/verify-backup.sh --all"
+    else
+        echo "  Status:          ○ Disabled (no backup configuration)"
+        echo "  Enable:          Configure BACKUP_* variables in settings.env and restart"
+    fi
     echo ""
     echo -e "${BLUE}Service Management:${NC}"
     echo "  View logs:       docker compose logs -f [service-name]"
@@ -447,22 +513,19 @@ post_deployment() {
     echo "  Update images:   docker compose pull && ./startup.sh"
     echo ""
     
-    # Show backup service status if enabled
-    if [[ "$ENABLE_BACKUP_PROFILE" == "true" ]]; then
-        echo -e "${BLUE}Backup Service:${NC}"
-        echo "  Status:          Enabled (automated daily backups)"
-        echo "  Manual backup:   docker compose exec bw_backup /backup/db-backup.sh --force"
-        echo "  Backup location: ./data/backups/"
-        echo "  Restore:         ./backup/db-restore.sh"
-        echo ""
-    else
-        echo -e "${YELLOW}Backup Service:${NC}"
-        echo "  Status:          Disabled (no backup configuration)"
-        echo "  Enable:          Configure BACKUP_* variables in settings.env and restart"
-        echo ""
-    fi
+    # Show health check timing info
+    echo -e "${BLUE}Health Check Intervals:${NC}"
+    echo "  Critical services: 30s (fast dependency resolution)"
+    echo "  Web services:      5m (standard monitoring)"
+    echo "  Utility services:  30-60m (low frequency)"
+    echo ""
     
     echo -e "${GREEN}Deployment successful! 🚀${NC}"
+    echo ""
+    echo -e "${BLUE}Quick Start:${NC}"
+    echo "1. Access VaultWarden: ${DOMAIN:-'http://localhost'}"
+    echo "2. Create admin account: ${DOMAIN:-'http://localhost'}/admin"
+    echo "3. Monitor system: ./dashboard.sh"
     echo ""
 }
 
@@ -503,6 +566,8 @@ Options:
 
 Environment Variables:
     OCI_SECRET_OCID     Use OCI Vault for configuration
+    PUID                User ID for user services (default: 1000)
+    PGID                Group ID for user services (default: 1000)
     DEBUG               Enable debug logging
 
 Examples:
@@ -512,11 +577,16 @@ Examples:
     OCI_SECRET_OCID=ocid1... $0  # Use OCI Vault
     DEBUG=true $0                # Debug mode
 
+Security Design:
+- User services (vaultwarden, caddy, backup): PUID:PGID (default 1000:1000)
+- System services (mariadb, redis): 999:999 (security separation)
+- Data directories automatically configured for proper ownership
+
 Memory Allocation (OCI A1 Optimized):
 - Reduced memory limits to fit within 6GB total system capacity
-- All services use standardized user ID 1000:1000
-- Faster health checks for reduced startup time
+- Faster health checks (30s) for reduced startup time
 - Backup service auto-enabled based on configuration
+- Relaxed dependencies for better startup resilience
 
 EOF
                 exit 0
@@ -543,7 +613,8 @@ EOF
     echo ""
     echo "Next steps:"
     echo "  - Run './dashboard.sh' for real-time monitoring"
-    echo "  - Run './diagnose.sh' if you encounter any issues"
+    echo "  - Run './diagnose.sh' if you encounter any issues" 
+    echo "  - Run './benchmark.sh run all' for performance testing"
     echo "  - Check './perf-monitor.sh status' for performance metrics"
 }
 
