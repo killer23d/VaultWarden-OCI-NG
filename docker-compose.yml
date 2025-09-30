@@ -1,12 +1,11 @@
 version: "3.8"
 
 services:
-
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
-    user: "${PUID}:${PGID}"
+    user: "${PUID:-1000}:${PGID:-1000}"
     env_file:
       - ./settings.env
     volumes:
@@ -14,27 +13,31 @@ services:
     networks:
       - bw_net
     depends_on:
-      mariadb:
+      bw_mariadb:
         condition: service_healthy
-      redis:
+      bw_redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
-      interval: 1m30s
+      test: ["CMD-SHELL", "curl -f http://localhost:80/alive || exit 1"]
+      interval: 2m
       timeout: 10s
       retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
           memory: 512M
         reservations:
           memory: 256M
+    environment:
+      - DATABASE_URL=mysql://${MARIADB_USER}:${MARIADB_PASSWORD}@bw_mariadb:3306/${MARIADB_DATABASE}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@bw_redis:6379
 
-  mariadb:
+  bw_mariadb:
     image: mariadb:latest
     container_name: bw_mariadb
     restart: unless-stopped
-    user: "999:999"
+    user: "999:999"  # Security separation - database user
     env_file:
       - ./settings.env
     environment:
@@ -45,25 +48,25 @@ services:
     volumes:
       - ./data/mariadb:/var/lib/mysql:rw
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p${MARIADB_ROOT_PASSWORD} >/dev/null 2>&1 || exit 1"]
-      interval: 1m30s
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u${MARIADB_USER} -p${MARIADB_PASSWORD} --silent || exit 1"]
+      interval: 2m
       timeout: 10s
       retries: 5
-      start_period: 40s
+      start_period: 60s
     networks:
       - bw_net
     deploy:
       resources:
         limits:
-          memory: 2.5G
+          memory: 2G
         reservations:
           memory: 512M
 
-  redis:
+  bw_redis:
     image: redis:latest
     container_name: bw_redis
     restart: unless-stopped
-    user: "999:999"
+    user: "999:999"  # Security separation - cache user
     env_file:
       - ./settings.env
     volumes:
@@ -71,9 +74,10 @@ services:
     command: ["redis-server", "--save", "60", "1", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 30s
+      interval: 1m
       timeout: 5s
       retries: 3
+      start_period: 15s
     networks:
       - bw_net
     deploy:
@@ -83,11 +87,11 @@ services:
         reservations:
           memory: 128M
 
-  caddy:
+  bw_caddy:
     image: caddy:latest
     container_name: bw_caddy
     restart: unless-stopped
-    user: "${PUID}:${PGID}"
+    user: "${PUID:-1000}:${PGID:-1000}"
     env_file:
       - ./settings.env
     volumes:
@@ -103,10 +107,11 @@ services:
       vaultwarden:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS --max-time 5 https://localhost || curl -fsS --max-time 5 http://localhost || exit 1"]
-      interval: 1m
+      test: ["CMD-SHELL", "curl -fsS --max-time 5 https://localhost/health || curl -fsS --max-time 5 http://localhost/health || exit 1"]
+      interval: 2m
       timeout: 10s
       retries: 3
+      start_period: 30s
     networks:
       - bw_net
     deploy:
@@ -116,7 +121,7 @@ services:
         reservations:
           memory: 64M
 
-  fail2ban:
+  bw_fail2ban:
     image: lscr.io/linuxserver/fail2ban:latest
     container_name: bw_fail2ban
     restart: unless-stopped
@@ -133,17 +138,18 @@ services:
     cap_add:
       - NET_ADMIN
     environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
     healthcheck:
       test: ["CMD-SHELL", "fail2ban-client ping >/dev/null 2>&1 || exit 1"]
-      interval: 2m
+      interval: 5m
       timeout: 10s
       retries: 3
+      start_period: 60s
     networks:
       - bw_net
     depends_on:
-      caddy:
+      bw_caddy:
         condition: service_started
       vaultwarden:
         condition: service_healthy
@@ -154,7 +160,7 @@ services:
         reservations:
           memory: 64M
 
-  ddclient:
+  bw_ddclient:
     image: lscr.io/linuxserver/ddclient:latest
     container_name: bw_ddclient
     restart: unless-stopped
@@ -163,10 +169,11 @@ services:
     volumes:
       - ./ddclient:/config:rw
     healthcheck:
-      test: ["CMD-SHELL", "ddclient -query | grep -q 'address'"]
-      interval: 5m
-      timeout: 10s
+      test: ["CMD-SHELL", "ddclient -query | grep -q 'address' || exit 1"]
+      interval: 10m
+      timeout: 15s
       retries: 2
+      start_period: 30s
     networks:
       - bw_net
     deploy:
@@ -176,7 +183,7 @@ services:
         reservations:
           memory: 32M
 
-  backup:
+  bw_backup:
     build:
       context: ./backup
       dockerfile: Dockerfile
@@ -197,13 +204,14 @@ services:
     depends_on:
       vaultwarden:
         condition: service_healthy
-      mariadb:
+      bw_mariadb:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "test -w /backups || exit 1"]
+      test: ["CMD-SHELL", "test -w /backups && pgrep cron >/dev/null || exit 1"]
       interval: 30m
       timeout: 10s
-      retries: 1
+      retries: 2
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -213,16 +221,17 @@ services:
     profiles:
       - backup
 
-  watchtower:
+  bw_watchtower:
     image: containrrr/watchtower
-    restart: always
-    container_name: watchtower
+    restart: unless-stopped
+    container_name: bw_watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE}
-      - TZ=${TZ}
+      - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE:-0 0 3 * * 0}
+      - TZ=${TZ:-UTC}
+      - WATCHTOWER_NOTIFICATIONS_LEVEL=info
     networks:
       - bw_net
     deploy:
@@ -235,3 +244,4 @@ services:
 networks:
   bw_net:
     driver: bridge
+    name: vaultwarden_network
