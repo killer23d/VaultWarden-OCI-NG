@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# startup.sh -- Secure startup with standardized environment variable handling
+# startup.sh -- Secure startup with profile handling
 
 set -euo pipefail
 
@@ -14,6 +14,10 @@ readonly NC='\033[0m'
 readonly CLOUDFLARE_IP_SCRIPT="./caddy/update_cloudflare_ips.sh"
 readonly FAIL2BAN_TEMPLATE="./fail2ban/jail.d/jail.local.template"
 readonly FAIL2BAN_CONFIG="./fail2ban/jail.d/jail.local"
+
+# Default profiles
+DEFAULT_PROFILES=""
+ENABLE_BACKUP_PROFILE=false
 
 # Helper functions
 log_info() {
@@ -31,6 +35,36 @@ log_warning() {
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
     exit 1
+}
+
+# Check if backup should be enabled
+check_backup_profile() {
+    log_info "Checking backup configuration..."
+    
+    # Source environment to check backup settings
+    if [[ -f "${COMPOSE_ENV_FILE:-./settings.env}" ]]; then
+        source "${COMPOSE_ENV_FILE:-./settings.env}"
+    fi
+    
+    # Enable backup if any backup settings are configured
+    if [[ -n "${BACKUP_PASSPHRASE:-}" ]] || [[ -n "${BACKUP_REMOTE:-}" ]] || [[ -n "${BACKUP_EMAIL:-}" ]]; then
+        ENABLE_BACKUP_PROFILE=true
+        log_info "Backup configuration detected - enabling backup service"
+    else
+        log_info "No backup configuration - backup service will be disabled"
+    fi
+}
+
+# Build profile arguments
+build_profile_args() {
+    local profile_args=()
+    
+    if [[ "$ENABLE_BACKUP_PROFILE" == "true" ]]; then
+        profile_args+=("--profile" "backup")
+        log_info "Backup profile will be activated"
+    fi
+    
+    echo "${profile_args[@]}"
 }
 
 # Validate required directories and files
@@ -55,6 +89,26 @@ validate_environment() {
             log_error "Required library not found: $lib"
         fi
     done
+    
+    # Ensure data directories have correct ownership
+    log_info "Setting data directory permissions..."
+    if [[ -d "./data" ]]; then
+        # Set ownership to 1000:1000 for consistency with containers
+        if command -v chown >/dev/null 2>&1; then
+            if [[ $(id -u) -eq 0 ]] || sudo -n chown --help >/dev/null 2>&1; then
+                local chown_cmd=""
+                if [[ $(id -u) -ne 0 ]]; then
+                    chown_cmd="sudo "
+                fi
+                
+                ${chown_cmd}chown -R 1000:1000 ./data 2>/dev/null || log_warning "Could not set data directory ownership"
+                ${chown_cmd}chmod -R 755 ./data 2>/dev/null || log_warning "Could not set data directory permissions"
+                log_success "Data directory permissions updated"
+            else
+                log_warning "Cannot set data directory ownership - ensure ./data is owned by UID 1000"
+            fi
+        fi
+    fi
     
     log_success "Environment validation passed"
 }
@@ -86,7 +140,7 @@ update_cloudflare_ips() {
         fi
     done
     
-    if [[ "$need_update" == "true" ]] || [[ "${1:-}" == "--force-ip-update" ]]; then
+    if [[ "$need_update" == "true" ]] || [[ "${1:-}" == "true" ]]; then
         log_info "Updating Cloudflare IP ranges..."
         if "$CLOUDFLARE_IP_SCRIPT"; then
             log_success "Cloudflare IP ranges updated"
@@ -167,7 +221,7 @@ load_environment() {
     local required_vars=(
         "DOMAIN_NAME" "APP_DOMAIN" "ADMIN_TOKEN"
         "MARIADB_ROOT_PASSWORD" "MARIADB_PASSWORD" "REDIS_PASSWORD"
-        "MARIADB_USER" "MARIADB_DATABASE"
+        "MARIADB_USER" "MARIADB_DATABASE" "DATABASE_URL"
     )
     
     for var in "${required_vars[@]}"; do
@@ -188,6 +242,11 @@ load_environment() {
         log_error "Variables still contain placeholder values: ${placeholder_vars[*]}"
         echo "Please update settings.env with actual values"
         exit 1
+    fi
+    
+    # Validate DATABASE_URL format
+    if [[ ! "$DATABASE_URL" =~ mysql://.*@bw_mariadb:3306/ ]]; then
+        log_error "DATABASE_URL format incorrect. Should be: mysql://user:pass@bw_mariadb:3306/database"
     fi
     
     # Set the environment file for docker-compose
@@ -253,15 +312,28 @@ prepare_system() {
 start_containers() {
     log_info "Starting container stack..."
     
+    # Build profile arguments
+    local profile_args
+    profile_args=($(build_profile_args))
+    
     # Use the secure environment file
-    if docker compose --env-file "${COMPOSE_ENV_FILE}" up -d --remove-orphans; then
+    local compose_cmd=(docker compose --env-file "${COMPOSE_ENV_FILE}")
+    
+    # Add profile arguments if any
+    if [[ ${#profile_args[@]} -gt 0 ]]; then
+        compose_cmd+=("${profile_args[@]}")
+        log_info "Using profiles: ${profile_args[*]}"
+    fi
+    
+    # Start the stack
+    if "${compose_cmd[@]}" up -d --remove-orphans; then
         log_success "Container stack started successfully"
     else
         log_error "Failed to start container stack"
     fi
     
     # Wait a moment for containers to initialize
-    sleep 5
+    sleep 10
     
     # Source libraries for health check functions
     source "./lib/docker.sh"
@@ -272,11 +344,11 @@ start_containers() {
     
     for service in "${critical_services[@]}"; do
         local attempts=0
-        local max_attempts=30
+        local max_attempts=20  # Reduced since health checks are now faster
         
         while [[ $attempts -lt $max_attempts ]]; do
             if is_service_running "$service"; then
-                if is_service_healthy "$service" || [[ $attempts -gt 15 ]]; then
+                if is_service_healthy "$service" || [[ $attempts -gt 10 ]]; then
                     log_success "Service $service is ready"
                     break
                 fi
@@ -288,14 +360,14 @@ start_containers() {
         done
         
         if [[ $attempts -eq $max_attempts ]]; then
-            log_warning "Service $service may not be fully ready"
+            log_warning "Service $service may not be fully ready yet"
         fi
     done
     
     # Show container status
     echo ""
     log_info "Current container status:"
-    docker compose ps
+    "${compose_cmd[@]}" ps
     
     # Quick health summary
     echo ""
@@ -311,6 +383,17 @@ start_containers() {
             echo -e "  ${RED}●${NC} $service: not running"
         fi
     done
+    
+    # Show backup service status
+    if [[ "$ENABLE_BACKUP_PROFILE" == "true" ]]; then
+        if is_service_running "bw_backup"; then
+            echo -e "  ${GREEN}●${NC} bw_backup: enabled and running"
+        else
+            echo -e "  ${YELLOW}●${NC} bw_backup: enabled but starting up"
+        fi
+    else
+        echo -e "  ${BLUE}○${NC} bw_backup: disabled (no backup configuration)"
+    fi
 }
 
 # Post-deployment checks and information
@@ -343,6 +426,13 @@ post_deployment() {
     echo "  URL:        ${DOMAIN:-'http://localhost'}"
     echo "  Admin URL:  ${DOMAIN:-'http://localhost'}/admin"
     echo ""
+    echo -e "${BLUE}Memory Allocation (OCI A1 Optimized):${NC}"
+    echo "  VaultWarden:    512MB"
+    echo "  MariaDB:        1GB"
+    echo "  Redis:          256MB"
+    echo "  Other services: ~1GB"
+    echo "  Total:          ~3.8GB (within 6GB limit)"
+    echo ""
     echo -e "${BLUE}Management Commands:${NC}"
     echo "  Dashboard:       ./dashboard.sh"
     echo "  Performance:     ./perf-monitor.sh status"
@@ -358,16 +448,17 @@ post_deployment() {
     echo ""
     
     # Show backup service status if enabled
-    if docker compose ps | grep -q bw_backup; then
+    if [[ "$ENABLE_BACKUP_PROFILE" == "true" ]]; then
         echo -e "${BLUE}Backup Service:${NC}"
         echo "  Status:          Enabled (automated daily backups)"
         echo "  Manual backup:   docker compose exec bw_backup /backup/db-backup.sh --force"
         echo "  Backup location: ./data/backups/"
+        echo "  Restore:         ./backup/db-restore.sh"
         echo ""
     else
         echo -e "${YELLOW}Backup Service:${NC}"
-        echo "  Status:          Disabled"
-        echo "  Enable:          docker compose --profile backup up -d"
+        echo "  Status:          Disabled (no backup configuration)"
+        echo "  Enable:          Configure BACKUP_* variables in settings.env and restart"
         echo ""
     fi
     
@@ -389,6 +480,11 @@ main() {
                 force_ip_update=true
                 shift
                 ;;
+            --enable-backup)
+                ENABLE_BACKUP_PROFILE=true
+                log_info "Forcing backup service enable"
+                shift
+                ;;
             --debug)
                 export DEBUG="true"
                 shift
@@ -401,6 +497,7 @@ Usage: $0 [OPTIONS]
 
 Options:
     --force-ip-update    Force update of Cloudflare IP ranges
+    --enable-backup      Force enable backup service (overrides auto-detection)
     --debug             Enable debug logging
     --help, -h          Show this help message
 
@@ -409,18 +506,17 @@ Environment Variables:
     DEBUG               Enable debug logging
 
 Examples:
-    $0                           # Normal startup
+    $0                           # Normal startup with auto-detected profiles
+    $0 --enable-backup           # Force backup service enabled
     $0 --force-ip-update         # Startup with IP update
     OCI_SECRET_OCID=ocid1... $0  # Use OCI Vault
     DEBUG=true $0                # Debug mode
 
-This script will:
-1. Validate system requirements and project structure
-2. Load configuration from OCI Vault or local settings.env
-3. Update Cloudflare IP ranges if needed
-4. Generate Fail2ban configuration
-5. Start Docker Compose stack with health checks
-6. Display access information and management commands
+Memory Allocation (OCI A1 Optimized):
+- Reduced memory limits to fit within 6GB total system capacity
+- All services use standardized user ID 1000:1000
+- Faster health checks for reduced startup time
+- Backup service auto-enabled based on configuration
 
 EOF
                 exit 0
@@ -436,6 +532,7 @@ EOF
     prepare_system
     update_cloudflare_ips "$force_ip_update"
     load_environment
+    check_backup_profile
     generate_fail2ban_config
     start_containers
     post_deployment
