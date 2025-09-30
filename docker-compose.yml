@@ -216,6 +216,8 @@ services:
         max-size: "50m"
         max-file: "3"
         labels: "service=fail2ban"
+    profiles:
+      - security
 
   bw_ddclient:
     image: lscr.io/linuxserver/ddclient:latest
@@ -250,7 +252,10 @@ services:
         max-size: "25m"
         max-file: "2"
         labels: "service=ddclient"
+    profiles:
+      - dns
 
+  # UPDATED: Directory mount pattern for rclone config
   bw_backup:
     build:
       context: ./backup
@@ -264,7 +269,8 @@ services:
     volumes:
       - ./data/backups:/backups:rw
       - ./data/backup_logs:/var/log/backup:rw
-      - ./backup/rclone.conf:/home/backup/.config/rclone/rclone.conf:ro
+      # BEST PRACTICE: Mount config directory, not individual file
+      - ./backup/config:/home/backup/.config/rclone:rw
     networks:
       - bw_net
     depends_on:
@@ -336,6 +342,8 @@ services:
         max-size: "25m"
         max-file: "2"
         labels: "service=watchtower"
+    profiles:
+      - maintenance
 
   bw_logrotate:
     image: alpine:latest
@@ -372,6 +380,8 @@ services:
         max-size: "10m"
         max-file: "2"
         labels: "service=logrotate"
+    profiles:
+      - maintenance
 
 networks:
   bw_net:
@@ -380,3 +390,12 @@ networks:
     ipam:
       config:
         - subnet: 172.20.0.0/24
+
+# Profile definitions for documentation
+# Usage examples:
+#   docker compose up -d                           # Core services only
+#   docker compose --profile backup up -d         # Core + backup
+#   docker compose --profile security up -d       # Core + fail2ban  
+#   docker compose --profile dns up -d            # Core + ddclient
+#   docker compose --profile maintenance up -d    # Core + watchtower + logrotate
+#   ./startup.sh                                  # Automatic profile selection
