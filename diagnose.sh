@@ -1,165 +1,399 @@
-#!/bin/bash
-# diagnose.sh - Comprehensive diagnostic script for Vaultwarden stack
+#!/usr/bin/env bash
+# diagnose.sh -- Modular diagnostic script for VaultWarden-OCI
 
+# Set up environment
 set -euo pipefail
+export DEBUG="${DEBUG:-false}"
+export LOG_FILE="/tmp/vaultwarden_diagnose_$(date +%Y%m%d_%H%M%S).log"
 
-# Color codes
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+# Source library modules
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/docker.sh"
+source "$SCRIPT_DIR/lib/config.sh"
 
-echo -e "${BLUE}=== Vaultwarden Stack Diagnostics ===${NC}"
-echo "Generated at: $(date)"
-echo "Hostname: $(hostname)"
-echo "Kernel: $(uname -r)"
-echo ""
+# ================================
+# DIAGNOSTIC MODULES
+# ================================
 
-# Function to get container ID dynamically
-get_container_id() {
-    local service_name=$1
-    docker compose ps -q "$service_name" 2>/dev/null || echo ""
-}
-
-# Function to run diagnostic tests
-run_diagnostic() {
-    local test_name=$1
-    local test_command=$2
+# System diagnostics
+run_system_diagnostics() {
+    echo -e "${BOLD}=== SYSTEM DIAGNOSTICS ===${NC}"
     
-    echo -e "${YELLOW}Testing: $test_name${NC}"
-    if eval "$test_command" >/dev/null 2>&1; then
-        echo -e "${GREEN}✅ $test_name: PASS${NC}"
-        return 0
-    else
-        echo -e "${RED}❌ $test_name: FAIL${NC}"
-        return 1
-    fi
+    log_info "Checking system requirements..."
+    validate_system_requirements
+    
+    log_info "System Information:"
+    echo "Hostname: $(hostname)"
+    echo "Kernel: $(uname -r)"
+    echo "Uptime: $(uptime)"
+    
+    # Resource usage
+    echo -e "\n${BLUE}Resource Usage:${NC}"
+    echo "CPU Usage:"
+    top -bn1 | grep "Cpu(s)" | head -1 || echo "CPU info not available"
+    
+    echo -e "\nMemory Usage:"
+    free -h
+    
+    echo -e "\nDisk Usage:"
+    df -h . 2>/dev/null
+    
+    echo ""
 }
 
-# System Requirements Check
-echo -e "${BLUE}🔍 System Requirements Check:${NC}"
-run_diagnostic "Docker installed" "command -v docker"
-run_diagnostic "Docker Compose installed" "command -v docker compose"
-run_diagnostic "Docker daemon running" "docker info"
-run_diagnostic "Sufficient disk space (>2GB free)" "[ \$(df --output=avail . | tail -1) -gt 2097152 ]"
-run_diagnostic "Sufficient RAM (>1GB free)" "[ \$(free -m | awk '/^Mem:/{print \$7}') -gt 1024 ]"
-
-echo ""
-echo -e "${BLUE}📁 File Structure Check:${NC}"
-run_diagnostic "settings.env exists" "[ -f ./settings.env ]"
-run_diagnostic "docker-compose.yml exists" "[ -f ./docker-compose.yml ]"
-run_diagnostic "Caddyfile exists" "[ -f ./caddy/Caddyfile ]"
-run_diagnostic "Fail2ban config exists" "[ -f ./fail2ban/jail.d/jail.local ]"
-run_diagnostic "Data directory exists" "[ -d ./data ]"
-run_diagnostic "Data directory writable" "[ -w ./data ]"
-
-echo ""
-echo -e "${BLUE}🐳 Container Status Check:${NC}"
-services=("vaultwarden" "mariadb" "redis" "caddy" "fail2ban" "backup" "watchtower")
-
-for service in "${services[@]}"; do
-    container_id=$(get_container_id "$service")
-    if [ -n "$container_id" ]; then
-        status=$(docker inspect --format='{{.State.Status}}' "$container_id" 2>/dev/null || echo "unknown")
-        health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-health-check{{end}}' "$container_id" 2>/dev/null || echo "unknown")
+# Project structure diagnostics
+run_project_diagnostics() {
+    echo -e "${BOLD}=== PROJECT DIAGNOSTICS ===${NC}"
+    
+    validate_project_structure
+    
+    # Check configuration files
+    log_info "Checking configuration files..."
+    
+    if [[ -f "$SETTINGS_FILE" ]]; then
+        log_success "Settings file found"
         
-        case $status in
-            "running")
-                if [ "$health" = "healthy" ]; then
-                    echo -e "${GREEN}✅ $service: Running and Healthy${NC}"
-                elif [ "$health" = "unhealthy" ]; then
-                    echo -e "${RED}❌ $service: Running but Unhealthy${NC}"
-                    echo "   Health check details:"
-                    docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' "$container_id" | tail -3
-                else
-                    echo -e "${YELLOW}⚠️  $service: Running (no health check)${NC}"
-                fi
-                ;;
-            *)
-                echo -e "${RED}❌ $service: $status${NC}"
-                echo "   Recent logs:"
-                docker logs --tail 5 "$container_id" 2>/dev/null || echo "   No logs available"
-                ;;
-        esac
+        # Basic validation
+        set -a
+        source "$SETTINGS_FILE"
+        set +a
+        
+        # Check critical variables
+        local missing_vars=()
+        for var in "${REQUIRED_VARS[@]}"; do
+            if [[ -z "${!var:-}" ]]; then
+                missing_vars+=("$var")
+            fi
+        done
+        
+        if [[ ${#missing_vars[@]} -eq 0 ]]; then
+            log_success "All required variables are configured"
+        else
+            log_warning "Missing variables: ${missing_vars[*]}"
+        fi
     else
-        echo -e "${RED}❌ $service: Not found or not running${NC}"
+        log_warning "Settings file not found"
     fi
-done
-
-echo ""
-echo -e "${BLUE}🌐 Network Connectivity Check:${NC}"
-
-# Test internal connectivity
-vaultwarden_id=$(get_container_id "vaultwarden")
-if [ -n "$vaultwarden_id" ]; then
-    run_diagnostic "Vaultwarden HTTP endpoint" "docker exec $vaultwarden_id curl -f http://localhost:80/ --max-time 10"
-fi
-
-mariadb_id=$(get_container_id "mariadb")
-if [ -n "$mariadb_id" ]; then
-    run_diagnostic "MariaDB connectivity" "docker exec $mariadb_id mysqladmin ping -h localhost --silent"
-fi
-
-redis_id=$(get_container_id "redis")
-if [ -n "$redis_id" ]; then
-    run_diagnostic "Redis connectivity" "docker exec $redis_id redis-cli ping"
-fi
-
-# Test external connectivity
-run_diagnostic "External DNS resolution" "nslookup google.com"
-run_diagnostic "External HTTP connectivity" "curl -f https://httpbin.org/status/200 --max-time 10"
-
-echo ""
-echo -e "${BLUE}🔧 Configuration Validation:${NC}"
-
-# Load settings if available
-if [ -f ./settings.env ]; then
-    source ./settings.env
     
-    # Validate key settings
-    run_diagnostic "DOMAIN_NAME configured" "[ -n \"\${DOMAIN_NAME:-}\" ]"
-    run_diagnostic "DATABASE_URL configured" "[ -n \"\${DATABASE_URL:-}\" ]"
-    run_diagnostic "ADMIN_TOKEN configured" "[ -n \"\${ADMIN_TOKEN:-}\" ]"
+    echo ""
+}
+
+# Docker diagnostics
+run_docker_diagnostics() {
+    echo -e "${BOLD}=== DOCKER DIAGNOSTICS ===${NC}"
+    
+    # Docker system info
+    log_info "Docker version:"
+    docker --version
+    docker compose version
+    
+    # Stack status
+    log_info "Checking stack status..."
+    if is_stack_running; then
+        log_success "Stack is running"
+        
+        # Detailed service check
+        perform_health_check
+        
+        # Network connectivity
+        test_internal_connectivity
+        
+    else
+        log_warning "Stack is not running"
+    fi
+    
+    # Show service details
+    echo -e "\n${BLUE}Service Status:${NC}"
+    docker compose ps
+    
+    echo ""
+}
+
+# Configuration diagnostics
+run_config_diagnostics() {
+    echo -e "${BOLD}=== CONFIGURATION DIAGNOSTICS ===${NC}"
+    
+    if [[ -f "$SETTINGS_FILE" ]]; then
+        # Test SMTP if configured
+        if test_smtp_config "$SETTINGS_FILE"; then
+            log_success "SMTP configuration appears valid"
+        fi
+        
+        # Test database if running
+        if test_database_config "$SETTINGS_FILE"; then
+            log_success "Database configuration is working"
+        fi
+        
+        # Check Cloudflare IP status
+        if need_cloudflare_ip_update; then
+            log_warning "Cloudflare IP files need updating"
+        else
+            log_success "Cloudflare IP files are current"
+        fi
+        
+    else
+        log_warning "No configuration file to test"
+    fi
+    
+    echo ""
+}
+
+# Security diagnostics
+run_security_diagnostics() {
+    echo -e "${BOLD}=== SECURITY DIAGNOSTICS ===${NC}"
+    
+    # Check file permissions
+    log_info "Checking file permissions..."
+    
+    if [[ -f "$SETTINGS_FILE" ]]; then
+        local perms
+        perms=$(stat -c "%a" "$SETTINGS_FILE")
+        if [[ "$perms" == "600" ]]; then
+            log_success "Settings file has correct permissions (600)"
+        else
+            log_warning "Settings file permissions: $perms (should be 600)"
+        fi
+    fi
+    
+    # Check for exposed secrets
+    log_info "Checking for exposed secrets..."
+    if git status >/dev/null 2>&1; then
+        if git ls-files | grep -q "$SETTINGS_FILE"; then
+            log_error "Settings file is tracked in git!"
+        else
+            log_success "Settings file is not tracked in git"
+        fi
+    fi
+    
+    # Check Fail2ban status
+    if is_service_running "bw_fail2ban"; then
+        local f2b_id
+        f2b_id=$(get_container_id "bw_fail2ban")
+        local banned_count
+        banned_count=$(docker exec "$f2b_id" fail2ban-client status 2>/dev/null | grep -c "Banned" || echo "0")
+        log_info "Fail2ban has banned $banned_count IPs"
+    fi
+    
+    echo ""
+}
+
+# Network diagnostics
+run_network_diagnostics() {
+    echo -e "${BOLD}=== NETWORK DIAGNOSTICS ===${NC}"
+    
+    # Test external connectivity
+    log_info "Testing external connectivity..."
+    
+    if curl -f https://httpbin.org/status/200 --max-time 10 >/dev/null 2>&1; then
+        log_success "External HTTPS connectivity working"
+    else
+        log_warning "External HTTPS connectivity failed"
+    fi
+    
+    if nslookup google.com >/dev/null 2>&1; then
+        log_success "DNS resolution working"
+    else
+        log_warning "DNS resolution failed"
+    fi
     
     # Test domain resolution if configured
-    if [ -n "${DOMAIN_NAME:-}" ]; then
-        run_diagnostic "Domain resolves" "nslookup vault.${DOMAIN_NAME}"
+    if [[ -f "$SETTINGS_FILE" ]]; then
+        set -a
+        source "$SETTINGS_FILE"
+        set +a
+        
+        if [[ -n "${APP_DOMAIN:-}" ]]; then
+            if nslookup "${APP_DOMAIN}" >/dev/null 2>&1; then
+                log_success "Domain ${APP_DOMAIN} resolves"
+            else
+                log_warning "Domain ${APP_DOMAIN} does not resolve"
+            fi
+        fi
     fi
-fi
+    
+    # Internal connectivity
+    test_internal_connectivity
+    
+    echo ""
+}
 
-echo ""
-echo -e "${BLUE}📊 Resource Usage:${NC}"
-echo "CPU Usage:"
-top -bn1 | grep "Cpu(s)" || echo "CPU info not available"
-
-echo ""
-echo "Memory Usage:"
-free -h
-
-echo ""
-echo "Disk Usage:"
-df -h ./data/ 2>/dev/null || echo "Data directory not found"
-
-echo ""
-echo -e "${BLUE}📝 Recent Error Logs:${NC}"
-for service in "${services[@]}"; do
-    container_id=$(get_container_id "$service")
-    if [ -n "$container_id" ]; then
-        echo ""
-        echo -e "${YELLOW}--- $service errors ---${NC}"
-        docker logs --tail 20 "$container_id" 2>&1 | grep -i error || echo "No recent errors"
+# Performance diagnostics
+run_performance_diagnostics() {
+    echo -e "${BOLD}=== PERFORMANCE DIAGNOSTICS ===${NC}"
+    
+    if is_stack_running; then
+        # Container resource usage
+        echo -e "${BLUE}Container Resource Usage:${NC}"
+        docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}" 2>/dev/null || echo "Unable to get container stats"
+        
+        # Database performance check
+        if is_service_running "bw_mariadb"; then
+            local db_id
+            db_id=$(get_container_id "bw_mariadb")
+            
+            echo -e "\n${BLUE}Database Status:${NC}"
+            docker exec "$db_id" mysql -uroot -p"${MARIADB_ROOT_PASSWORD:-}" -e "SHOW GLOBAL STATUS LIKE 'Threads_connected';" 2>/dev/null || echo "Unable to check database status"
+        fi
+    else
+        log_warning "Stack not running - skipping performance checks"
     fi
-done
+    
+    echo ""
+}
 
-echo ""
-echo -e "${BLUE}🔗 Useful Commands:${NC}"
-echo "View all logs:           ./monitor.sh"
-echo "Restart services:        docker compose restart"
-echo "View specific logs:      docker compose logs [service_name]"
-echo "Update configuration:    ./update-settings.sh"
-echo "Manual backup:           docker compose exec backup /backup/backup.sh"
+# Generate summary report
+generate_summary() {
+    echo -e "${BOLD}=== DIAGNOSTIC SUMMARY ===${NC}"
+    
+    local total_issues=0
+    
+    # Count warnings and errors from log
+    if [[ -f "$LOG_FILE" ]]; then
+        local warnings errors
+        warnings=$(grep -c "WARNING" "$LOG_FILE" 2>/dev/null || echo "0")
+        errors=$(grep -c "ERROR" "$LOG_FILE" 2>/dev/null || echo "0")
+        
+        echo "Warnings: $warnings"
+        echo "Errors: $errors"
+        
+        total_issues=$((warnings + errors))
+    fi
+    
+    if [[ $total_issues -eq 0 ]]; then
+        log_success "No issues detected!"
+    elif [[ $total_issues -lt 5 ]]; then
+        log_warning "$total_issues issues detected (minor)"
+    else
+        log_error "$total_issues issues detected (requires attention)"
+    fi
+    
+    echo -e "\n${BLUE}Useful Commands:${NC}"
+    echo "View logs:          ./monitor.sh"
+    echo "Restart services:   docker compose restart"
+    echo "Update config:      ./startup.sh"
+    echo "Manual backup:      docker compose exec bw_backup /backup/backup.sh -n"
+    echo "Collect diagnostics: $0 --collect"
+    
+    echo -e "\nFull log: $LOG_FILE"
+}
 
-echo ""
-echo -e "${GREEN}Diagnostic complete!${NC}"
-echo "If issues persist, check the logs above and ensure all requirements are met."
+# ================================
+# MAIN EXECUTION
+# ================================
+
+main() {
+    local collect_diagnostics_flag=false
+    local run_all=true
+    local selected_modules=()
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --collect)
+                collect_diagnostics_flag=true
+                shift
+                ;;
+            --system)
+                selected_modules+=("system")
+                run_all=false
+                shift
+                ;;
+            --docker)
+                selected_modules+=("docker")
+                run_all=false
+                shift
+                ;;
+            --config)
+                selected_modules+=("config")
+                run_all=false
+                shift
+                ;;
+            --network)
+                selected_modules+=("network")
+                run_all=false
+                shift
+                ;;
+            --security)
+                selected_modules+=("security")
+                run_all=false
+                shift
+                ;;
+            --performance)
+                selected_modules+=("performance")
+                run_all=false
+                shift
+                ;;
+            --debug)
+                export DEBUG="true"
+                shift
+                ;;
+            --help|-h)
+                cat <<EOF
+VaultWarden-OCI Diagnostic Script
+
+Usage: $0 [OPTIONS]
+
+Options:
+    --collect       Collect diagnostic files to directory
+    --system        Run only system diagnostics
+    --docker        Run only Docker diagnostics
+    --config        Run only configuration diagnostics
+    --network       Run only network diagnostics
+    --security      Run only security diagnostics
+    --performance   Run only performance diagnostics
+    --debug         Enable debug logging
+    --help, -h      Show this help message
+
+Examples:
+    $0                    # Run all diagnostics
+    $0 --docker --network # Run only Docker and network checks
+    $0 --collect          # Collect diagnostic files
+
+EOF
+                exit 0
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                ;;
+        esac
+    done
+    
+    echo -e "${BOLD}${BLUE}VaultWarden-OCI Diagnostics${NC}"
+    echo "Generated at: $(date)"
+    echo "Log file: $LOG_FILE"
+    echo ""
+    
+    # Collect diagnostics if requested
+    if [[ "$collect_diagnostics_flag" == "true" ]]; then
+        local diag_dir
+        diag_dir=$(collect_diagnostics)
+        log_success "Diagnostic files collected in: $diag_dir"
+        exit 0
+    fi
+    
+    # Run selected modules or all
+    if [[ "$run_all" == "true" ]]; then
+        selected_modules=("system" "project" "docker" "config" "security" "network" "performance")
+    fi
+    
+    for module in "${selected_modules[@]}"; do
+        case "$module" in
+            "system") run_system_diagnostics ;;
+            "project") run_project_diagnostics ;;
+            "docker") run_docker_diagnostics ;;
+            "config") run_config_diagnostics ;;
+            "security") run_security_diagnostics ;;
+            "network") run_network_diagnostics ;;
+            "performance") run_performance_diagnostics ;;
+            *) log_warning "Unknown diagnostic module: $module" ;;
+        esac
+    done
+    
+    generate_summary
+    
+    log_success "Diagnostics complete!"
+}
+
+# Execute main function
+main "$@"
