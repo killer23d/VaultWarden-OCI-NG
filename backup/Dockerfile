@@ -24,7 +24,8 @@ RUN chown -R backup:backup /backups /var/log/backup /home/backup
 
 # Copy scripts
 COPY db-backup.sh /backup/db-backup.sh
-COPY restore.sh /backup/restore.sh
+COPY db-restore.sh /backup/db-restore.sh
+COPY verify-backup.sh /backup/verify-backup.sh
 RUN chmod +x /backup/*.sh
 
 # Create empty rclone config if none exists (prevents startup failures)
