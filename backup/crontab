@@ -1,4 +1,0 @@
-# backup/crontab
-# m h dom mon dow user  command
-0 3 * * * backup /backup/backup.sh >> /var/log/backup/cron.log 2>&1
-# run daily at 03:00 UTC (adjust as needed)
