@@ -1,138 +1,501 @@
-# **Vaultwarden on OCI (Oracle Cloud Infrastructure)**
 
-This project provides a comprehensive, secure, and automated setup for self-hosting Vaultwarden, a Bitwarden-compatible server, using Docker Compose. It is optimized for deployment on an Oracle Cloud Infrastructure (OCI) A1 Flex VM but is portable to other environments.
+## 🚀 Professional-Grade Vaultwarden Deployment for Oracle Cloud Infrastructure
 
-The stack is designed with a security-first approach and includes the following components:
+A comprehensive, security-first, production-ready deployment solution for self-hosting [Vaultwarden](https://github.com/dani-garcia/vaultwarden) (Bitwarden-compatible server) on Oracle Cloud Infrastructure (OCI) A1 Flex instances. This project provides enterprise-grade automation, monitoring, backup, and security features optimized for OCI's free tier.
 
-* **Vaultwarden**: The core password manager application
-* **MariaDB**: A robust database for data persistence
-* **Redis**: High-performance caching to speed up the application
-* **Caddy**: A modern, automated reverse proxy with automatic HTTPS
-* **Fail2ban**: Proactive security against brute-force attacks with custom rules for Vaultwarden
-* **Automated Backups**: Daily encrypted backups to cloud storage using rclone, with email notifications
-* **Automated Updates**: Watchtower keeps your application containers up-to-date
-* **Advanced Management Scripts**: A suite of scripts for easy setup, validation, monitoring, and troubleshooting
-* **OCI Vault Integration**: Enterprise-grade secret management for production deployments
+### ✨ Key Features
 
-## **System Requirements**
+- **🔒 Security-First Architecture**: Multi-layered security with fail2ban, Cloudflare integration, and automated SSL
+- **📦 Production-Ready Stack**: Docker Compose with health checks, resource limits, and service dependencies
+- **💾 Automated Backup System**: Encrypted backups to cloud storage with verification and retention policies
+- **🔧 Profile-Based Deployment**: Modular service architecture (core, backup, security, dns, maintenance)
+- **📊 Comprehensive Monitoring**: Performance monitoring, health checks, and alert management
+- **🌐 OCI Optimized**: Specifically tuned for A1 Flex instances (1 OCPU ARM64, 6GB RAM)
+- **🤖 Complete Automation**: One-command setup from fresh VM to running service
+- **🔐 Enterprise Secrets Management**: Optional OCI Vault integration for secure configuration
 
-### **Hardware Requirements**
-* **Oracle A1 Flex**: 1 OCPU ARM64, 6GB RAM (free tier)
+## 📋 System Requirements
 
-### **Software Prerequisites**
-* **Operating System**: Ubuntu 22.04 LTS (recommended) or similar Linux distribution
-* **Docker & Docker Compose**: Docker 20.10+ and Docker Compose 2.0+
-* **Domain Name**: A domain you own with DNS management access
-* **Cloudflare Account**: Recommended for DNS management and DDoS protection
-* **SMTP Provider**: For transactional emails (e.g., MailerSend, SendGrid)
-* **Cloud Storage**: An rclone-compatible provider (e.g., Backblaze B2, Google Drive, AWS S3) for backups
+### Hardware Requirements
+- **Oracle A1 Flex Instance**: 1 OCPU ARM64, 6GB RAM (free tier eligible)
+- **Storage**: Minimum 20GB available disk space
+- **Network**: Public IP with ports 80/443 accessible
 
-## **VM Setup and System Preparation**
+### Software Prerequisites
+- **Operating System**: Ubuntu 22.04 LTS (recommended) or compatible Linux distribution
+- **Domain**: A domain name you control with DNS management access
+- **Cloud Storage**: rclone-compatible provider for backups (optional)
+- **SMTP Provider**: For email notifications (recommended)
 
-Before deploying the application, you must prepare your server. The `init-setup.sh` script automates most of this process.
+### External Services
+- **Cloudflare Account**: For DNS management and DDoS protection (recommended)
+- **Email Provider**: SMTP service for notifications (MailerSend, SendGrid, etc.)
+- **Backup Storage**: Cloud storage for automated backups (Backblaze B2, AWS S3, Google Drive, etc.)
 
-### **Step 1: Initial System Setup**
+## 🏗️ Architecture Overview
 
-For a fresh VM, the `init-setup.sh` script will:
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Internet Traffic                         │
+│                   (Cloudflare CDN)                          │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────────────┐
+│                  OCI A1 Flex Instance                       │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │               Docker Network (Bridge)                   │ │
+│  │                                                         │ │
+│  │  ┌──────────┐  ┌──────────────┐  ┌─────────────────┐   │ │
+│  │  │  Caddy   │  │ Vaultwarden  │  │    MariaDB      │   │ │
+│  │  │(Reverse  │◄─┤   (App)      │◄─┤   (Database)   │   │ │
+│  │  │ Proxy)   │  └──────┬───────┘  └─────────────────┘   │ │
+│  │  └──────────┘         │                                │ │
+│  │  ┌──────────┐         ▼                                │ │
+│  │  │ fail2ban │  ┌──────────────┐  ┌─────────────────┐   │ │
+│  │  │(Security)│  │    Redis     │  │   Backup System │   │ │
+│  │  └──────────┘  │   (Cache)    │  │   (Automated)   │   │ │
+│  │                └──────────────┘  └─────────────────┘   │ │
+│  └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
 
-1. Check system requirements (architecture, memory, disk space)
-2. Install necessary packages like curl, git, and docker
-3. Set up the project directory structure
-4. Create initial configuration files from templates
+### Service Components
 
-To run the script, clone the repository and execute it:
+| Service | Purpose | Profile | Resources |
+|---------|---------|---------|-----------|
+| **vaultwarden** | Core password manager application | core | 512MB RAM, 0.5 CPU |
+| **bw_mariadb** | Primary database with optimization | core | 1GB RAM, 0.5 CPU |
+| **bw_redis** | High-performance caching layer | core | 256MB RAM, 0.25 CPU |
+| **bw_caddy** | Reverse proxy with auto-HTTPS | core | 256MB RAM, 0.25 CPU |
+| **bw_fail2ban** | Intrusion detection/prevention | security | 128MB RAM, 0.25 CPU |
+| **bw_backup** | Automated backup system | backup | 256MB RAM, 0.5 CPU |
+| **bw_watchtower** | Container auto-updates | maintenance | 128MB RAM, 0.25 CPU |
+| **bw_ddclient** | Dynamic DNS updates | dns | 64MB RAM, 0.1 CPU |
+
+## 🚀 Quick Start
+
+### 1. Initial System Setup
+
+Run the automated setup script on your fresh OCI instance:
 
 ```bash
-git clone https://github.com/killer23d/vaultwarden-oci-ng.git
-cd vaultwarden-oci-ng
+# Clone the repository
+git clone https://github.com/killer23d/VaultWarden-OCI-NG.git
+cd VaultWarden-OCI-NG
+
+# Run the initial setup (installs Docker, creates directories, etc.)
+chmod +x init-setup.sh
 ./init-setup.sh
 ```
 
-### **Step 2: Configure Memory Swap (OCI A1 Flex)**
+**What this script does:**
+- ✅ Validates system requirements
+- ✅ Installs Docker and Docker Compose
+- ✅ Creates project directory structure
+- ✅ Generates configuration templates
+- ✅ Sets up proper permissions
+- ✅ Optionally installs OCI CLI
 
-To prevent out-of-memory issues, especially during database operations, add a swap file:
+### 2. Configure Your Installation
 
 ```bash
+# Create your configuration from the template
+cp settings.env.example settings.env
+
+# Edit your configuration (CRITICAL STEP)
+nano settings.env
+```
+
+**Required Configuration Changes:**
+
+```bash
+# 1. Set your domain
+DOMAIN_NAME=yourdomain.com
+APP_DOMAIN=vault.yourdomain.com
+DOMAIN=https://vault.yourdomain.com
+
+# 2. Generate secure passwords (run: openssl rand -base64 32)
+ADMIN_TOKEN=your-generated-secure-token
+MARIADB_ROOT_PASSWORD=your-generated-secure-password
+MARIADB_PASSWORD=your-generated-secure-password
+REDIS_PASSWORD=your-generated-secure-password
+BACKUP_PASSPHRASE=your-generated-secure-passphrase
+
+# 3. Configure SMTP for notifications
+SMTP_HOST=smtp.yourmailprovider.com
+SMTP_USERNAME=your-smtp-username
+SMTP_PASSWORD=your-smtp-password
+SMTP_FROM=vault@yourdomain.com
+
+# 4. Set admin email for SSL certificates
+ADMIN_EMAIL=admin@yourdomain.com
+```
+
+### 3. Configure DNS
+
+Point your domain to your OCI instance:
+
+```bash
+# A record examples:
+vault.yourdomain.com.  A  YOUR.OCI.PUBLIC.IP
+```
+
+### 4. Deploy VaultWarden
+
+```bash
+# Deploy with default profiles (core + security + maintenance)
+./startup.sh
+
+# Or deploy with specific profiles
+ENABLE_BACKUP=true ENABLE_DNS=false ./startup.sh
+```
+
+### 5. Access Your Vault
+
+- **Vault URL**: `https://vault.yourdomain.com`
+- **Admin Panel**: `https://vault.yourdomain.com/admin`
+- **Admin Token**: Use the `ADMIN_TOKEN` from your `settings.env`
+
+## 🔧 Configuration Profiles
+
+The deployment uses a modular profile system for flexible service management:
+
+### Core Profile (Always Active)
+- **vaultwarden**: Main application
+- **bw_mariadb**: Database
+- **bw_redis**: Cache
+- **bw_caddy**: Reverse proxy
+
+### Optional Profiles
+
+| Profile | Services | Purpose | Enable Variable |
+|---------|----------|---------|----------------|
+| **security** | fail2ban | Intrusion protection | `ENABLE_SECURITY=true` |
+| **backup** | backup system | Automated backups | `ENABLE_BACKUP=true` |
+| **maintenance** | watchtower, logrotate | Updates & maintenance | `ENABLE_MAINTENANCE=true` |
+| **dns** | ddclient | Dynamic DNS | `ENABLE_DNS=true` |
+
+### Profile Usage Examples
+
+```bash
+# Core services only
+docker compose up -d
+
+# Core + security + backups
+docker compose --profile security --profile backup up -d
+
+# All services
+ENABLE_BACKUP=true ENABLE_SECURITY=true ENABLE_MAINTENANCE=true ./startup.sh
+```
+
+## 💾 Backup System
+
+### Automated Backup Features
+
+- **📅 Scheduled Backups**: Daily database dumps with configurable timing
+- **🔐 Encryption**: GPG encryption with passphrase protection
+- **📦 Compression**: Automatic compression to save storage space
+- **☁️ Cloud Storage**: Upload to any rclone-compatible provider
+- **🔍 Verification**: Automatic backup integrity checking
+- **📧 Notifications**: Email alerts for backup status
+- **🗂️ Retention**: Configurable retention policies
+
+### Setup Backup Storage
+
+```bash
+# Configure rclone for your cloud provider
+docker compose exec bw_backup rclone config
+
+# Test your backup configuration
+docker compose exec bw_backup /scripts/db-backup.sh test
+
+# Manual backup
+docker compose exec bw_backup /scripts/db-backup.sh backup
+```
+
+### Restore from Backup
+
+```bash
+# List available backups
+docker compose exec bw_backup /scripts/db-restore.sh list
+
+# Restore specific backup
+docker compose exec bw_backup /scripts/db-restore.sh restore backup-20231201-120000.sql.gz
+```
+
+## 🔒 Security Features
+
+### Multi-Layer Security Architecture
+
+1. **Application Security**
+   - Admin token authentication
+   - Configurable user registration
+   - Two-factor authentication support
+   - Session security headers
+
+2. **Network Security**
+   - fail2ban intrusion detection
+   - Cloudflare IP whitelisting
+   - Rate limiting and DDoS protection
+   - Automatic HTTPS with HSTS
+
+3. **Container Security**
+   - Non-root user execution
+   - Resource limits and isolation
+   - Read-only filesystem mounts
+   - Network segmentation
+
+4. **Data Security**
+   - Database encryption at rest
+   - Encrypted backup storage
+   - Secure secret management
+   - OCI Vault integration (optional)
+
+### fail2ban Configuration
+
+The deployment includes custom fail2ban rules for Vaultwarden:
+
+- **Admin Panel Protection**: Blocks repeated admin login failures
+- **API Endpoint Protection**: Monitors suspicious API activity  
+- **Rate Limiting**: Prevents brute force attacks
+- **Automatic Unban**: Configurable ban duration and retry limits
+
+## 📊 Monitoring & Management
+
+### Built-in Management Tools
+
+```bash
+# Interactive monitoring dashboard
+./dashboard.sh
+
+# Performance monitoring
+./perf-monitor.sh status
+
+# Comprehensive diagnostics
+./diagnose.sh
+
+# System health check
+./monitor.sh
+
+# Alert management
+./alerts.sh check
+```
+
+### Health Check Endpoints
+
+- **Application Health**: `https://vault.yourdomain.com/health`
+- **Service Status**: `docker compose ps`
+- **Logs**: `docker compose logs -f [service-name]`
+
+### Performance Monitoring
+
+The system includes monitoring for:
+- **Resource Usage**: CPU, memory, disk, network
+- **Service Health**: Container status and health checks
+- **Database Performance**: Connection pools, query performance
+- **Backup Status**: Success rates, storage usage
+- **Security Events**: fail2ban activity, failed login attempts
+
+## 🔐 Advanced Configuration
+
+### OCI Vault Integration
+
+For enterprise deployments, store secrets securely in OCI Vault:
+
+```bash
+# Setup OCI Vault integration
+./oci_setup.sh setup
+
+# Deploy using OCI Vault
+export OCI_SECRET_OCID="ocid1.vaultsecret.oc1..."
+./startup.sh
+```
+
+### Custom SSL Certificates
+
+If not using automatic HTTPS:
+
+```bash
+# Place certificates in caddy directory
+./caddy/certs/cert.pem
+./caddy/certs/key.pem
+
+# Update Caddyfile to use custom certificates
+```
+
+### Database Optimization
+
+MariaDB is pre-configured for OCI A1 Flex, but you can customize:
+
+```bash
+# Edit database configuration
+nano config/mariadb/my.cnf
+
+# Restart database service
+docker compose restart bw_mariadb
+```
+
+## 🛠️ Troubleshooting
+
+### Common Issues
+
+#### 1. SSL Certificate Issues
+```bash
+# Check Caddy logs
+docker compose logs bw_caddy
+
+# Verify DNS resolution
+nslookup vault.yourdomain.com
+
+# Test certificate generation
+docker compose exec bw_caddy caddy validate --config /etc/caddy/Caddyfile
+```
+
+#### 2. Database Connection Issues
+```bash
+# Check database status
+docker compose exec bw_mariadb mysqladmin ping
+
+# Verify password configuration
+grep DATABASE_URL settings.env
+grep MARIADB_PASSWORD settings.env
+
+# Check database logs
+docker compose logs bw_mariadb
+```
+
+#### 3. Email/SMTP Issues
+```bash
+# Test SMTP configuration
+docker compose exec vaultwarden vaultwarden test-smtp
+
+# Check SMTP logs
+docker compose logs vaultwarden | grep -i smtp
+```
+
+#### 4. Backup Failures
+```bash
+# Test rclone configuration
+docker compose exec bw_backup rclone ls your-remote:
+
+# Check backup logs
+docker compose logs bw_backup
+cat data/backup_logs/backup.log
+```
+
+### Performance Optimization
+
+For better performance on OCI A1 Flex:
+
+```bash
+# Add swap space (recommended)
 sudo fallocate -l 2G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Optimize Docker daemon
+sudo nano /etc/docker/daemon.json
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
 ```
 
-### **Step 3: Configure Firewall and OCI Security Lists**
+## 📈 Maintenance
 
-You must allow HTTP and HTTPS traffic to your instance.
+### Regular Maintenance Tasks
 
-1. **In the OCI Console**:
-   * Navigate to your instance's subnet and edit the Security List
-   * Add Ingress Rules for ports 80 (HTTP) and 443 (HTTPS) from source `0.0.0.0/0`
+```bash
+# Check system health
+./monitor.sh
 
-2. **On the Server (if using ufw)**:
-   ```bash
-   sudo ufw allow 80/tcp
-   sudo ufw allow 443/tcp
-   sudo ufw reload
-   ```
+# Update container images (automatic with watchtower)
+docker compose pull && docker compose up -d
 
-## **Application Deployment**
+# Clean up old logs and data
+docker system prune -f
 
-### **Step 1: Configure Your Environment**
+# Backup verification
+docker compose exec bw_backup /scripts/verify-backup.sh
 
-This is the most critical step. All your secrets and instance-specific settings are in the `settings.env` file.
+# Security audit
+./diagnose.sh security
+```
 
-1. **Create the configuration file**:
-   ```bash
-   cp settings.env.example settings.env
-   ```
+### Update Strategy
 
-2. **Edit `settings.env`**:
-   * **DOMAIN_NAME**: Set to your root domain (e.g., `example.com`)
-   * **Passwords & Tokens**: Replace all placeholders like `generate-with-openssl-rand-base64-32`. Use `openssl rand -base64 32` to generate secure values for `ADMIN_TOKEN`, `MARIADB_ROOT_PASSWORD`, `MARIADB_PASSWORD`, `REDIS_PASSWORD`, and `BACKUP_PASSPHRASE`
-   * **DATABASE_URL**: Ensure the password in this URL matches `MARIADB_PASSWORD`
-   * **SMTP Configuration**: Fill in your email provider's details
-   * **ADMIN_EMAIL**: Your email for SSL certificate registration
+The deployment includes automatic updates via Watchtower:
+- **Schedule**: Weekly on Sundays at 3 AM (configurable)
+- **Safety**: Only updates when new versions are available
+- **Rollback**: Maintains previous images for quick rollback
+- **Notifications**: Email notifications for update status
 
-### **Step 2: Configure Backups with rclone**
+## 🚨 Security Best Practices
 
-For encrypted, off-site backups to work, configure rclone:
+### Recommended Security Settings
 
-1. **Copy the template**:
-   ```bash
-   cp backup/templates/rclone.conf.example backup/config/rclone.conf
-   ```
+1. **Strong Passwords**: Use `openssl rand -base64 32` for all passwords
+2. **Admin Token**: Generate a strong admin token and store securely
+3. **Regular Updates**: Keep all containers updated (automatic with Watchtower)
+4. **Backup Encryption**: Always encrypt backups with a strong passphrase
+5. **Network Security**: Use Cloudflare for additional DDoS protection
+6. **Access Control**: Limit admin panel access by IP if possible
 
-2. **Run the interactive setup**: This command runs inside the backup container and helps you configure your cloud storage provider:
-   ```bash
-   docker compose run --rm bw_backup rclone config
-   ```
+### fail2ban Configuration
 
-   Ensure the remote name you create matches the `BACKUP_REMOTE` variable in `settings.env`.
+```bash
+# View banned IPs
+docker compose exec bw_fail2ban fail2ban-client status vaultwarden
 
-### **Step 3 (Optional): Secure Secrets with OCI Vault**
+# Unban an IP address
+docker compose exec bw_fail2ban fail2ban-client set vaultwarden unbanip IP_ADDRESS
 
-For production, avoid storing secrets in plaintext. The `oci_setup.sh` script automates storing your `settings.env` file in OCI's secure Vault.
+# View fail2ban logs
+docker compose logs bw_fail2ban
+```
 
-1. **Run the setup script**:
-   ```bash
-   ./oci_setup.sh
-   ```
+## 📚 Documentation
 
-2. **Save the Secret OCID**: The script will output a `SECRET_OCID`. You will use this to launch the application.
+### File Structure
+```
+VaultWarden-OCI-NG/
+├── 📄 docker-compose.yml     # Main orchestration file
+├── 📄 settings.env.example   # Configuration template
+├── 📄 startup.sh            # Main deployment script
+├── 📄 init-setup.sh         # Initial system setup
+├── 📁 lib/                  # Shared utility functions
+├── 📁 caddy/                # Reverse proxy configuration
+├── 📁 fail2ban/             # Security configuration
+├── 📁 backup/               # Backup system
+├── 📁 config/               # Service configurations
+└── 📁 data/                 # Persistent data (created at runtime)
+```
 
-### **Step 4: Launch the Stack**
+### Environment Variables Reference
 
-The `startup.sh` script handles the entire deployment process, including configuration validation and service initialization.
+See the comprehensive `settings.env.example` file for all available configuration options organized by:
+- **Domain & Security Configuration**
+- **Database Configuration** 
+- **SMTP Configuration**
+- **Backup Configuration**
+- **Performance Tuning**
+- **Monitoring & Alerts**
 
-* **To launch using the local settings.env file**:
-  ```bash
-  ./startup.sh
-  ```
+### Development Setup
 
-* **To launch using OCI Vault**:
-  ```bash
-  export OCI_SECRET_OCID="your-secret-ocid-from-step-3"
-  ./startup.sh
-  ```
+```bash
+# Clone your fork
+git clone https://github.com/yourusername/VaultWarden-OCI-NG.git
 
-Your Vaultwarden instance will now be available at `https://vault.your-domain.com`.
+# Create development branch
+git checkout -b feature/your-feature-name
+
+# Test your changes
+ENABLE_DEVELOPMENT=true ./startup.sh
+```
+
