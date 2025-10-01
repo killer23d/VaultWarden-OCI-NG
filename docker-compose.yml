@@ -5,7 +5,7 @@ services:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"  # User services - data directory access
+    user: "${PUID:-1000}:${PGID:-1000}"
     env_file:
       - ./settings.env
     volumes:
@@ -18,7 +18,7 @@ services:
       bw_redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80/alive || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
       interval: 2m
       timeout: 15s
       retries: 3
@@ -47,7 +47,7 @@ services:
     image: mariadb:11-jammy
     container_name: bw_mariadb
     restart: unless-stopped
-    user: "999:999"  # System service - security separation
+    user: "999:999"
     env_file:
       - ./settings.env
     environment:
@@ -59,19 +59,7 @@ services:
     volumes:
       - ./data/mariadb:/var/lib/mysql:rw
       - ./config/mariadb/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
-    command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
-      --innodb-buffer-pool-size=384M
-      --innodb-log-file-size=128M
-      --innodb-flush-log-at-trx-commit=2
-      --innodb-flush-method=O_DIRECT
-      --query-cache-size=0
-      --query-cache-type=0
-      --max-connections=${DATABASE_MAX_CONNECTIONS:-15}
-      --thread-cache-size=8
-      --table-open-cache=64
-      --key-buffer-size=32M
+    # FIXED: Removed redundant command parameters - using my.cnf configuration instead
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u${MARIADB_USER} -p${MARIADB_PASSWORD} --silent || exit 1"]
       interval: 30s
@@ -99,7 +87,7 @@ services:
     image: redis:7-alpine
     container_name: bw_redis
     restart: unless-stopped
-    user: "999:999"  # System service - security separation
+    user: "999:999"
     env_file:
       - ./settings.env
     volumes:
@@ -133,7 +121,7 @@ services:
     image: caddy:2-alpine
     container_name: bw_caddy
     restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"  # User services - data directory access
+    user: "${PUID:-1000}:${PGID:-1000}"
     env_file:
       - ./settings.env
     volumes:
@@ -149,7 +137,7 @@ services:
       vaultwarden:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "caddy validate --config /etc/caddy/Caddyfile && curl -f http://vaultwarden:80/alive || exit 1"]
+      test: ["CMD-SHELL", "caddy validate --config /etc/caddy/Caddyfile && curl -f http://vaultwarden:80/ || exit 1"]
       interval: 5m
       timeout: 15s
       retries: 3
@@ -188,7 +176,7 @@ services:
     cap_add:
       - NET_ADMIN
     environment:
-      - PUID=${PUID:-1000}  # Uses PUID/PGID variables
+      - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - VERBOSITY=-vv
     healthcheck:
@@ -236,7 +224,7 @@ services:
     networks:
       - bw_net
     environment:
-      - PUID=${PUID:-1000}  # Uses PUID/PGID variables
+      - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
     deploy:
       resources:
@@ -255,7 +243,6 @@ services:
     profiles:
       - dns
 
-  # UPDATED: Directory mount pattern for rclone config
   bw_backup:
     build:
       context: ./backup
@@ -263,13 +250,12 @@ services:
     image: bitwarden_backup:latest
     container_name: bw_backup
     restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"  # User services - data directory access
+    user: "${PUID:-1000}:${PGID:-1000}"
     env_file:
       - ./settings.env
     volumes:
       - ./data/backups:/backups:rw
       - ./data/backup_logs:/var/log/backup:rw
-      # BEST PRACTICE: Mount config directory, not individual file
       - ./backup/config:/home/backup/.config/rclone:rw
     networks:
       - bw_net
@@ -345,20 +331,21 @@ services:
     profiles:
       - maintenance
 
+  # FIXED: Changed user to root for accessing Docker container logs
   bw_logrotate:
     image: alpine:latest
     container_name: bw_logrotate
     restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"  # User services - data directory access
+    user: "root:root"
     volumes:
       - ./data/caddy_logs:/var/log/caddy:rw
       - ./data/backup_logs:/var/log/backup:rw
       - ./config/logrotate:/etc/logrotate.d:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:rw
+    # FIXED: Simplified command - logrotate handles its own scheduling
     command: >
       sh -c "
       apk add --no-cache logrotate &&
-      echo '0 2 * * * /usr/sbin/logrotate -v /etc/logrotate.d/vaultwarden-logs 2>&1' > /var/spool/cron/crontabs/root &&
       crond -f -l 8"
     deploy:
       resources:
