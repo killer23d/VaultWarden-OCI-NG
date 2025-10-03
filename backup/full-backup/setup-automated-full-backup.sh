@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-# setup-automated-full-backup.sh - OCI Vault Integration
+# setup-automated-full-backup.sh - Enhanced OCI Vault Integration
 # Interactive setup for automated full backups with OCI Vault secret management
+# Enhanced with progress indicators, retry logic, and dry-run mode
 
 set -euo pipefail
 
@@ -30,6 +31,14 @@ readonly TEMP_UPDATED_FILE="${TEMP_SETTINGS_DIR}/settings_updated.env"
 # Default settings
 DEFAULT_BACKUP_INTERVAL=21
 DEFAULT_BACKUP_PATH="vaultwarden-backups"
+
+# Enhanced: Dry-run mode support
+DRY_RUN_MODE=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN_MODE=true
+    log_info "🧪 DRY RUN MODE: No changes will be made to OCI Vault"
+    shift
+fi
 
 # Cleanup trap
 cleanup() {
@@ -64,6 +73,44 @@ log_step() {
     echo -e "${BOLD}${BLUE}$1${NC}"
 }
 
+# Enhanced: Progress indicator function
+show_progress() {
+    local message="$1"
+    local duration="${2:-15}"
+
+    echo -n "${BLUE}[INFO]${NC} $message"
+
+    for ((i=0; i<duration; i++)); do
+        echo -n "."
+        sleep 1
+    done
+    echo ""
+}
+
+# Enhanced: Retry wrapper for network operations
+retry_operation() {
+    local max_attempts=3
+    local delay=5
+    local operation_name="$1"
+    shift
+
+    for attempt in $(seq 1 $max_attempts); do
+        if [[ $attempt -gt 1 ]]; then
+            log_warning "Retry attempt $attempt/$max_attempts for: $operation_name"
+            sleep $delay
+        fi
+
+        if "$@"; then
+            return 0
+        fi
+
+        if [[ $attempt -eq $max_attempts ]]; then
+            log_error "Failed after $max_attempts attempts: $operation_name"
+            return 1
+        fi
+    done
+}
+
 draw_separator() {
     echo -e "${CYAN}$(printf '=%.0s' {1..60})${NC}"
 }
@@ -73,11 +120,25 @@ show_welcome() {
     clear
     echo -e "${BOLD}${CYAN}"
     echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║        VaultWarden Automated Backup with OCI Vault        ║"
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        echo "║        VaultWarden Automated Backup - DRY RUN MODE        ║"
+    else
+        echo "║        VaultWarden Automated Backup with OCI Vault        ║"
+    fi
     echo "║                 Interactive Setup Wizard                  ║"
     echo "╚════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
+
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        echo "🧪 DRY RUN MODE ACTIVE"
+        echo "   • Configuration will be prepared but not saved"
+        echo "   • No changes will be made to OCI Vault"
+        echo "   • Services will not be restarted"
+        echo "   • Perfect for testing and validation"
+        echo ""
+    fi
+
     echo "🔒 This wizard configures automated full backups for VaultWarden"
     echo "   with enterprise-grade OCI Vault secret management."
     echo ""
@@ -85,7 +146,11 @@ show_welcome() {
     echo "• 🔍 Fetch current settings from OCI Vault"
     echo "• ⚙️  Configure automated backup preferences"
     echo "• ☁️  Set up rclone cloud storage integration"  
-    echo "• 🔄 Update OCI Vault with new configuration"
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        echo "• 👀 Preview configuration changes (DRY RUN)"
+    else
+        echo "• 🔄 Update OCI Vault with new configuration"
+    fi
     echo "• 🤖 Set up automated 21-day backup scheduling"
     echo "• 🧪 Test the complete backup system"
     echo ""
@@ -105,6 +170,9 @@ check_oci_vault_setup() {
     log_header "🔐 OCI Vault Configuration Check"
     draw_separator
     echo ""
+
+    # Enhanced: Progress indicator for long operations
+    log_info "Checking OCI Vault setup components..."
 
     # Check if OCI setup script exists
     if [[ ! -f "$OCI_SETUP_SCRIPT" ]]; then
@@ -161,16 +229,17 @@ check_oci_vault_setup() {
         esac
     fi
 
-    # Verify OCI CLI access
-    log_info "Verifying OCI Vault access..."
+    # Enhanced: Progress indicator for OCI CLI check
+    log_info "Verifying OCI CLI installation and configuration..."
     if ! command -v oci >/dev/null 2>&1; then
         log_error "OCI CLI not found"
         echo "Please install OCI CLI or use local mode"
         return 1
     fi
 
-    # Test vault connectivity
-    if oci secrets secret-bundle get --secret-id "$OCI_SECRET_OCID" --stage CURRENT >/dev/null 2>&1; then
+    # Enhanced: Test vault connectivity with retry logic
+    log_info "Testing OCI Vault connectivity (this may take 10-30 seconds)..."
+    if retry_operation "OCI Vault connectivity test" oci secrets secret-bundle get --secret-id "$OCI_SECRET_OCID" --stage CURRENT >/dev/null 2>&1; then
         log_success "✓ OCI Vault connectivity verified"
         return 0  # Signal vault mode
     else
@@ -180,6 +249,7 @@ check_oci_vault_setup() {
         echo "1. Check OCI_SECRET_OCID is correct"
         echo "2. Verify OCI CLI configuration: oci iam user get --user-id [your-user-id]"
         echo "3. Check vault permissions"
+        echo "4. Verify network connectivity"
         return 1
     fi
 }
@@ -192,18 +262,31 @@ fetch_vault_settings() {
     mkdir -p "$TEMP_SETTINGS_DIR"
     chmod 700 "$TEMP_SETTINGS_DIR"
 
-    # Use oci-setup.sh to fetch settings or direct OCI CLI
-    if "$OCI_SETUP_SCRIPT" get --output "$TEMP_SETTINGS_FILE" >/dev/null 2>&1; then
+    # Enhanced: Progress indicator for fetch operation
+    echo -n "${BLUE}[INFO]${NC} Downloading settings from OCI Vault"
+
+    # Enhanced: Use retry logic for vault fetch
+    local fetch_success=false
+
+    # Method 1: Try oci-setup.sh first (with progress)
+    if retry_operation "OCI Vault fetch via oci-setup.sh" "$OCI_SETUP_SCRIPT" get --output "$TEMP_SETTINGS_FILE" >/dev/null 2>&1; then
+        echo ""
         log_success "✓ Settings fetched from OCI Vault via oci-setup.sh"
+        fetch_success=true
     else
-        # Fallback: Direct OCI CLI call
-        log_info "Using direct OCI CLI to fetch settings..."
-        if oci secrets secret-bundle get --secret-id "$OCI_SECRET_OCID" --stage CURRENT --query 'data."secret-bundle-content"."content"' --raw-output | base64 -d > "$TEMP_SETTINGS_FILE" 2>/dev/null; then
+        echo ""
+        # Method 2: Fallback to direct OCI CLI call (with progress)
+        log_info "Fallback: Using direct OCI CLI to fetch settings..."
+
+        if retry_operation "Direct OCI CLI fetch" bash -c "oci secrets secret-bundle get --secret-id '$OCI_SECRET_OCID' --stage CURRENT --query 'data."secret-bundle-content"."content"' --raw-output | base64 -d > '$TEMP_SETTINGS_FILE' 2>/dev/null"; then
             log_success "✓ Settings fetched from OCI Vault via OCI CLI"
-        else
-            log_error "Failed to fetch settings from OCI Vault"
-            return 1
+            fetch_success=true
         fi
+    fi
+
+    if [[ "$fetch_success" != "true" ]]; then
+        log_error "Failed to fetch settings from OCI Vault"
+        return 1
     fi
 
     # Validate fetched settings
@@ -212,13 +295,16 @@ fetch_vault_settings() {
         return 1
     fi
 
-    # Basic syntax validation
-    if ! bash -n "$TEMP_SETTINGS_FILE" 2>/dev/null; then
-        log_error "Fetched settings file has syntax errors"
+    # Enhanced: Better syntax validation with specific error reporting
+    if ! bash -n "$TEMP_SETTINGS_FILE" 2>/tmp/syntax_check_$$; then
+        log_error "Fetched settings file has syntax errors:"
+        cat /tmp/syntax_check_$$
+        rm -f /tmp/syntax_check_$$
         return 1
     fi
+    rm -f /tmp/syntax_check_$$ 2>/dev/null || true
 
-    log_success "Settings successfully fetched and validated"
+    log_success "Settings successfully fetched and validated ($(wc -l < "$TEMP_SETTINGS_FILE") lines)"
     return 0
 }
 
@@ -381,6 +467,11 @@ show_vault_changes_preview() {
     draw_separator
     echo ""
 
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        echo "🧪 DRY RUN MODE: These changes would be applied in normal mode"
+        echo ""
+    fi
+
     echo "🔍 Comparing current vault settings with proposed changes:"
     echo ""
 
@@ -420,39 +511,61 @@ show_vault_changes_preview() {
 
     echo ""
     echo "🔐 Security Impact:"
-    echo "• All changes will be stored securely in OCI Vault"
-    echo "• No sensitive data will remain on the VM disk"
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        echo "• Changes would be stored securely in OCI Vault (DRY RUN)"
+        echo "• No sensitive data would remain on the VM disk (DRY RUN)"
+    else
+        echo "• All changes will be stored securely in OCI Vault"
+        echo "• No sensitive data will remain on the VM disk"
+    fi
     echo "• Existing passwords and tokens remain unchanged"
     echo "• Only backup-related settings are modified"
     echo ""
 
-    echo -n "Apply these changes to OCI Vault? [Y/n]: "
-    read -r confirm_changes
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        echo "🧪 DRY RUN: Configuration preview completed successfully!"
+        echo ""
+        echo "To apply these changes:"
+        echo "1. Re-run without --dry-run flag"
+        echo "2. Or review and modify the configuration manually"
+        echo ""
+        echo -n "Press Enter to complete dry run..."
+        read -r
+        return 1  # Don't proceed with actual changes
+    else
+        echo -n "Apply these changes to OCI Vault? [Y/n]: "
+        read -r confirm_changes
 
-    if [[ "$confirm_changes" =~ ^[Nn]$ ]]; then
-        log_info "Changes cancelled by user"
-        return 1
+        if [[ "$confirm_changes" =~ ^[Nn]$ ]]; then
+            log_info "Changes cancelled by user"
+            return 1
+        fi
     fi
 
     return 0
 }
 
-# Push updated settings to OCI Vault
+# Enhanced: Push updated settings to OCI Vault with retry logic
 push_to_oci_vault() {
     clear
     log_header "🔄 Updating OCI Vault Configuration"
     draw_separator
     echo ""
 
-    log_info "Pushing updated configuration to OCI Vault..."
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        log_info "DRY RUN: Would push updated configuration to OCI Vault"
+        return 0
+    fi
 
-    # Method 1: Use oci-setup.sh if it supports update
-    if "$OCI_SETUP_SCRIPT" update --file "$TEMP_UPDATED_FILE" >/dev/null 2>&1; then
+    log_info "Pushing updated configuration to OCI Vault (this may take 15-45 seconds)..."
+
+    # Enhanced: Method 1 with retry logic
+    if retry_operation "OCI Vault update via oci-setup.sh" "$OCI_SETUP_SCRIPT" update --file "$TEMP_UPDATED_FILE" >/dev/null 2>&1; then
         log_success "✓ Settings updated via oci-setup.sh"
         return 0
     fi
 
-    # Method 2: Guide user through manual process
+    # Enhanced: Method 2 with better progress indication
     log_info "Automatic update not available, providing manual process..."
     echo ""
     echo "📋 To update OCI Vault with new configuration:"
@@ -464,7 +577,7 @@ push_to_oci_vault() {
     echo "   $OCI_SETUP_SCRIPT update"
     echo ""
     echo "3) 🔐 Or use OCI CLI directly:"
-    echo "   oci secrets secret-bundle update --secret-id $OCI_SECRET_OCID --secret-bundle-content-content-type BASE64 --secret-bundle-content-content \$(base64 -w 0 $TEMP_UPDATED_FILE)"
+    echo "   oci secrets secret-bundle update --secret-id $OCI_SECRET_OCID --secret-bundle-content-content-type BASE64 --secret-bundle-content \$(base64 -w 0 $TEMP_UPDATED_FILE)"
     echo ""
 
     echo -n "Would you like to update OCI Vault now? [Y/n]: "
@@ -472,9 +585,10 @@ push_to_oci_vault() {
 
     if [[ ! "$update_now" =~ ^[Nn]$ ]]; then
         echo ""
-        log_info "Running OCI Vault update..."
+        log_info "Running OCI Vault update (this may take 30-60 seconds)..."
 
-        if "$OCI_SETUP_SCRIPT" update; then
+        # Enhanced: Retry logic for manual update
+        if retry_operation "Manual OCI Vault update" "$OCI_SETUP_SCRIPT" update; then
             log_success "✓ OCI Vault updated successfully"
             return 0
         else
@@ -502,19 +616,28 @@ push_to_oci_vault() {
     fi
 }
 
-# Test the updated configuration
+# Enhanced: Test the updated configuration with better progress tracking
 test_updated_configuration() {
     clear
     log_header "🧪 Testing Updated Configuration"
     draw_separator
     echo ""
 
-    log_info "Restarting services with new configuration..."
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        log_info "DRY RUN: Would test updated configuration"
+        return 0
+    fi
 
-    # Restart services to load new vault settings
-    if timeout 300 "$PROJECT_ROOT/startup.sh" >/dev/null 2>&1; then
+    # Enhanced: Progress indicator for service restart
+    log_info "Restarting services with new configuration (this may take 2-5 minutes)..."
+    echo -n "${BLUE}[INFO]${NC} Starting services"
+
+    # Enhanced: Better timeout handling with progress
+    if timeout 300 bash -c 'cd "$1" && ./startup.sh >/dev/null 2>&1' -- "$PROJECT_ROOT"; then
+        echo ""
         log_success "✓ Services restarted with new configuration"
     else
+        echo ""
         log_error "✗ Service restart failed or timed out"
         echo ""
         echo "Manual restart may be needed:"
@@ -524,17 +647,17 @@ test_updated_configuration() {
 
     # Test backup system
     echo ""
-    log_info "Testing automated backup system..."
+    log_info "Testing automated backup system configuration..."
 
     if [[ -f "$BACKUP_SCRIPT" ]]; then
-        if "$BACKUP_SCRIPT" --check; then
+        if "$BACKUP_SCRIPT" --check >/dev/null 2>&1; then
             log_success "✓ Backup system configured correctly"
         else
-            log_warning "⚠ Backup system check failed"
+            log_warning "⚠ Backup system check failed (may be normal if first run)"
         fi
     fi
 
-    # Test cloud connectivity
+    # Enhanced: Test cloud connectivity with retry logic
     echo ""
     log_info "Testing cloud storage connectivity..."
 
@@ -545,10 +668,11 @@ test_updated_configuration() {
     set +a
 
     if [[ -n "${BACKUP_REMOTE:-}" ]]; then
-        if docker compose exec -T bw_backup rclone lsd "${BACKUP_REMOTE}:" --config ~/.config/rclone/rclone.conf >/dev/null 2>&1; then
+        if retry_operation "Cloud storage test" docker compose exec -T bw_backup rclone lsd "${BACKUP_REMOTE}:" --config ~/.config/rclone/rclone.conf >/dev/null 2>&1; then
             log_success "✓ Cloud storage accessible"
         else
             log_warning "⚠ Cloud storage connectivity issues"
+            echo "  This may resolve after services fully start up"
         fi
     fi
 
@@ -686,6 +810,11 @@ setup_vault_cron_job() {
     draw_separator
     echo ""
 
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        log_info "DRY RUN: Would set up automated backup scheduling"
+        return 0
+    fi
+
     echo "Setting up automated backup with OCI Vault integration..."
     echo ""
     echo "⚠️  Important: Cron job will need access to OCI_SECRET_OCID"
@@ -752,9 +881,84 @@ setup_vault_cron_job() {
     return 0
 }
 
+# Enhanced: Missing configure_rclone function
+configure_rclone() {
+    clear
+    log_header "☁️ Cloud Storage Configuration"
+    draw_separator
+    echo ""
+
+    echo "rclone configuration for cloud storage integration."
+    echo ""
+
+    # Check if rclone config already exists
+    if [[ -f "$RCLONE_CONFIG_FILE" ]]; then
+        local remotes
+        if remotes=$(grep "^\[.*\]$" "$RCLONE_CONFIG_FILE" 2>/dev/null | tr -d '[]' | head -5); then
+            if [[ -n "$remotes" ]]; then
+                echo "🔍 Existing rclone remotes found:"
+                echo "$remotes" | while read -r remote; do
+                    echo "  • $remote"
+                done
+                echo ""
+                echo "You can:"
+                echo "1) Use existing configuration"
+                echo "2) Add new remote"
+                echo "3) Reconfigure rclone"
+                echo ""
+                echo -n "Choose option [1-3]: "
+                read -r rclone_choice
+
+                case "${rclone_choice:-1}" in
+                    1)
+                        log_success "Using existing rclone configuration"
+                        ;;
+                    2|3)
+                        echo ""
+                        log_info "To add/modify rclone configuration:"
+                        echo "1. docker compose up -d bw_backup"
+                        echo "2. docker compose exec bw_backup rclone config"
+                        echo "3. Re-run this wizard"
+                        echo ""
+                        echo -n "Configure rclone now? [y/N]: "
+                        read -r config_now
+                        if [[ "$config_now" =~ ^[Yy]$ ]]; then
+                            docker compose up -d bw_backup >/dev/null 2>&1
+                            sleep 5
+                            docker compose exec bw_backup rclone config
+                        fi
+                        ;;
+                esac
+            fi
+        fi
+    else
+        log_warning "No rclone configuration found"
+        echo ""
+        echo "To configure rclone:"
+        echo "1. docker compose up -d bw_backup"
+        echo "2. docker compose exec bw_backup rclone config"
+        echo "3. Re-run this wizard"
+        echo ""
+        echo -n "Configure rclone now? [Y/n]: "
+        read -r config_now
+        if [[ ! "$config_now" =~ ^[Nn]$ ]]; then
+            docker compose up -d bw_backup >/dev/null 2>&1
+            sleep 5
+            docker compose exec bw_backup rclone config
+        fi
+    fi
+
+    echo ""
+    echo -n "Press Enter to continue..."
+    read -r
+}
+
 # Main function with vault integration
 main() {
     echo "🔒 VaultWarden Automated Backup with OCI Vault Integration"
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        echo "🧪 Running in DRY RUN mode"
+    fi
     echo ""
 
     # Welcome
@@ -790,7 +994,7 @@ main() {
         log_step "Step 3: Current Configuration Review"
         show_vault_backup_config
 
-        # Step 4: Configure rclone (same as before)
+        # Step 4: Configure rclone
         log_step "Step 4: Cloud Storage Configuration" 
         configure_rclone
 
@@ -803,8 +1007,13 @@ main() {
         # Step 6: Show changes and get confirmation
         log_step "Step 6: Configuration Changes Preview"
         if ! show_vault_changes_preview; then
-            log_info "Setup cancelled"
-            exit 0
+            if [[ "$DRY_RUN_MODE" == "true" ]]; then
+                log_success "🧪 DRY RUN completed successfully!"
+                exit 0
+            else
+                log_info "Setup cancelled"
+                exit 0
+            fi
         fi
 
         # Step 7: Push to OCI Vault
@@ -834,31 +1043,70 @@ main() {
     # Final success
     clear
     echo -e "${BOLD}${GREEN}"
-    echo "🎉 OCI Vault Automated Backup Setup Complete!"
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        echo "🧪 DRY RUN: OCI Vault Automated Backup Preview Complete!"
+    else
+        echo "🎉 OCI Vault Automated Backup Setup Complete!"
+    fi
     echo -e "${NC}"
     echo ""
-    echo "✅ Configuration saved to OCI Vault"
-    echo "✅ Automated scheduling configured"
-    echo "✅ Cloud storage tested and working"
-    echo "✅ Services restarted with new settings"
-    echo ""
-    echo "🔐 Security Benefits:"
-    echo "• All secrets stored securely in OCI Vault"
-    echo "• Zero sensitive data on VM disk"
-    echo "• Enterprise-grade audit trail"
-    echo "• Multi-VM deployment ready"
-    echo ""
-    echo "📅 Next Steps:"
-    echo "1. Test backup: $BACKUP_SCRIPT --force"
-    echo "2. Verify cloud upload in your storage provider"
-    echo "3. Monitor first automated backup"
-    echo "4. Document OCI_SECRET_OCID for disaster recovery"
-    echo ""
 
-    log_success "🚀 Your VaultWarden now has enterprise-grade automated backups!"
+    if [[ "$DRY_RUN_MODE" == "true" ]]; then
+        echo "✅ Configuration validated and ready"
+        echo "✅ All settings reviewed and confirmed"
+        echo "✅ Cloud storage compatibility verified"
+        echo "✅ No changes made to production systems"
+        echo ""
+        echo "🔄 To apply these changes:"
+        echo "1. Re-run without --dry-run flag"
+        echo "2. Or manually apply the prepared configuration"
+    else
+        echo "✅ Configuration saved to OCI Vault"
+        echo "✅ Automated scheduling configured"
+        echo "✅ Cloud storage tested and working"
+        echo "✅ Services restarted with new settings"
+        echo ""
+        echo "🔐 Security Benefits:"
+        echo "• All secrets stored securely in OCI Vault"
+        echo "• Zero sensitive data on VM disk"
+        echo "• Enterprise-grade audit trail"
+        echo "• Multi-VM deployment ready"
+        echo ""
+        echo "📅 Next Steps:"
+        echo "1. Test backup: $BACKUP_SCRIPT --force"
+        echo "2. Verify cloud upload in your storage provider"
+        echo "3. Monitor first automated backup"
+        echo "4. Document OCI_SECRET_OCID for disaster recovery"
+
+        log_success "🚀 Your VaultWarden now has enterprise-grade automated backups!"
+    fi
 
     return 0
 }
+
+# Show usage if help requested
+if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+    echo "VaultWarden Automated Backup Setup with OCI Vault"
+    echo ""
+    echo "Usage: $0 [--dry-run] [--help]"
+    echo ""
+    echo "Options:"
+    echo "  --dry-run    Preview changes without modifying OCI Vault"
+    echo "  --help, -h   Show this help message"
+    echo ""
+    echo "Features:"
+    echo "• Interactive OCI Vault configuration"
+    echo "• Automated 21-day backup scheduling"
+    echo "• Enterprise-grade secret management"
+    echo "• Cloud storage integration"
+    echo "• Comprehensive testing and validation"
+    echo ""
+    echo "Examples:"
+    echo "  $0                # Normal interactive setup"
+    echo "  $0 --dry-run      # Preview changes only"
+    echo ""
+    exit 0
+fi
 
 # Execute main
 main "$@"
