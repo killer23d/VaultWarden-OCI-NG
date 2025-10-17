@@ -125,4 +125,3 @@ No manual action is required for this step.
     3.  Ensure your server's firewall is not blocking traffic on ports 80 and 443 from Cloudflare's IP ranges.
 
 By following this guide, you can leverage Cloudflare to significantly improve the security and performance of your self-hosted VaultWarden instance.
-"""
