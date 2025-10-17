@@ -1,772 +1,621 @@
-# Backup and Restore Guide
+# Backup and Recovery Guide
 
-> **🎯 Data Protection Philosophy**: Comprehensive, automated backup strategy with multiple formats, encryption, and tested recovery procedures for maximum data safety.
+This comprehensive guide covers backup strategies, recovery procedures, and disaster recovery planning for the VaultWarden-OCI-NG stack.
 
-## 🛡️ **Backup Strategy Overview**
+## Backup Strategy Overview
 
-VaultWarden-OCI-Minimal implements a **multi-layered backup strategy** designed for small teams with enterprise-grade data protection:
+### Multi-Tier Backup Architecture
+The VaultWarden-OCI-NG stack implements a comprehensive backup strategy with multiple tiers:
 
-```bash
-Backup Architecture:
-├── Automated Daily Backups (Database + Configurations)
-├── Automated Weekly Backups (Full System Snapshots)
-├── Manual On-Demand Backups (Pre-maintenance, Emergency)
-├── Multiple Format Support (Binary, SQL, JSON, CSV)
-├── Encryption & Compression (AES-256-GCM + gzip)
-├── Integrity Verification (Checksums + Test Restoration)
-├── Retention Management (Configurable Cleanup Policies)
-└── Off-Site Capabilities (Cloud Storage Ready)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Backup Tier Structure                    │
+├─────────────────────────────────────────────────────────────┤
+│ Tier 1: Real-time Protection                              │
+│   • SQLite WAL (Write-Ahead Logging) mode                 │
+│   • Immediate data durability                             │
+│   • Transaction-level recovery capability                 │
+├─────────────────────────────────────────────────────────────┤
+│ Tier 2: Daily Automated Backups                           │
+│   • Encrypted database dumps                              │
+│   • 30-day retention policy                               │
+│   • Integrity verification included                       │
+├─────────────────────────────────────────────────────────────┤
+│ Tier 3: Weekly Full System Backups                        │
+│   • Complete system state capture                         │
+│   • Configuration and certificates                        │
+│   • 8-week retention policy                               │
+├─────────────────────────────────────────────────────────────┤
+│ Tier 4: Manual/Off-site Backups                           │
+│   • On-demand backup creation                             │
+│   • Cloud storage integration                             │
+│   • Long-term archival storage                            │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### **Backup Types and Schedules**
+### Backup Principles
+- **Encryption First**: All backups encrypted with AES-256
+- **Verification Required**: Every backup includes integrity checks
+- **Automated Scheduling**: Minimal manual intervention required
+- **Multiple Recovery Points**: Various granularity options
+- **Secure Storage**: Backups protected with same security as live data
 
-#### **Automated Backup Schedule**
+## Automated Backup System
+
+### Backup Schedule Configuration
+The init-setup script automatically configures the backup schedule:
+
 ```bash
-# Configured automatically during init-setup.sh
-# Database backups: Daily at 1:00 AM
-0 1 * * * root cd /opt/VaultWarden-OCI-Minimal && ./tools/db-backup.sh
+# View current backup schedule
+crontab -l | grep backup
 
-# Full system backups: Weekly on Sunday at 12:00 AM
-0 0 * * 0 root cd /opt/VaultWarden-OCI-Minimal && ./tools/create-full-backup.sh
-
-# Backup verification: Daily at 1:30 AM (after database backup)
-30 1 * * * root cd /opt/VaultWarden-OCI-Minimal && ./tools/restore.sh --verify-recent
-
-# Cleanup old backups: Daily at 4:00 AM
-0 4 * * * root find /var/lib/*/backups -name "*.backup*" -mtime +30 -delete
+# Expected automated schedule:
+# 0 2 * * *   Daily database backup at 2:00 AM
+# 0 3 * * 0   Weekly full backup every Sunday at 3:00 AM
+# 0 1 * * 6   Weekly database maintenance on Saturday at 1:00 AM
 ```
 
-#### **Backup Content Coverage**
-```bash
-Database Backups Include:
-├── SQLite database file (db.sqlite3)
-├── Database integrity verification
-├── User vault data and metadata
-├── Organization data and settings
-├── File attachments and sends
-├── Authentication tokens and sessions
-└── Application configuration data
+### Daily Database Backups
 
-Full System Backups Include:
-├── Complete database backup
-├── Application configuration (settings.json)
-├── SSL certificates and keys
-├── Caddy configuration and custom settings
-├── Fail2ban rules and IP lists
-├── Log files and system state
-├── Docker volumes and container data
-└── Cron jobs and systemd configurations
+#### Automated Database Backup Process
+```bash
+# Manual database backup (same process as automated)
+./tools/db-backup.sh
+
+# Backup process includes:
+# 1. Database integrity verification
+# 2. Consistent backup creation (no corruption risk)
+# 3. AES-256 encryption with backup passphrase
+# 4. Compression for storage efficiency
+# 5. Automatic cleanup of old backups
 ```
 
-## 💾 **Database Backup System**
+#### Database Backup Configuration
+```bash
+# View database backup settings
+grep -E "(BACKUP_KEEP_DB|backup)" settings.env.example
 
-### **Database Backup Script**
+# Default settings:
+# BACKUP_KEEP_DB=30          # Keep 30 days of database backups
+# Backup location: $PROJECT_STATE_DIR/backups/daily/
+# Encryption: AES-256-CBC with backup_passphrase from secrets
+```
 
-#### **Basic Database Backup**
+#### Database Backup Format
+```bash
+# Backup file naming convention
+db-backup-YYYYMMDD-HHMMSS.sqlite3.enc
+
+# Example files:
+db-backup-20241016-020001.sqlite3.enc
+db-backup-20241015-020001.sqlite3.enc
+db-backup-20241014-020001.sqlite3.enc
+```
+
+### Weekly Full System Backups
+
+#### Comprehensive System Backup
+```bash
+# Manual full system backup
+./tools/create-full-backup.sh
+
+# Full backup includes:
+# • VaultWarden database and attachments
+# • Configuration files (settings.json)
+# • SSL certificates and private keys
+# • Docker Compose configuration
+# • Log files (optional)
+# • Service configurations (Caddy, Fail2ban)
+```
+
+#### Full Backup Configuration
+```bash
+# Full backup options
+./tools/create-full-backup.sh --help
+
+# Available options:
+--output-dir PATH       # Custom backup destination
+--compression LEVEL     # Compression level (1-9, default: 6)
+--exclude-logs         # Skip log files in backup
+--dry-run              # Preview backup contents
+```
+
+#### Full Backup Format
+```bash
+# Full backup file naming
+backup-full-YYYYMMDD-HHMMSS.tar.gz.enc
+
+# Backup contents structure:
+backup-full-20241016-030001.tar.gz.enc
+├── data/bwdata/           # VaultWarden database and attachments
+├── settings.json          # Configuration file
+├── caddy_data/           # SSL certificates
+├── caddy_config/         # Caddy runtime configuration
+├── secrets/              # Encrypted secrets (keys excluded)
+├── docker-compose.yml    # Service configuration
+└── logs/                 # Service logs (if included)
+```
+
+## Manual Backup Operations
+
+### On-Demand Backup Creation
+
+#### Database-Only Backup
 ```bash
 # Create immediate database backup
 ./tools/db-backup.sh
 
-# Expected output:
-🔍 Starting VaultWarden database backup...
-✅ Container health verified
-✅ Database accessibility confirmed
-✅ Backup directory prepared: /var/lib/vaultwarden-oci-minimal/backups/db/
-📦 Creating backup: vaultwarden-db-20241014-173025.backup
-✅ Database copied successfully (2.3MB)
-🔐 Encrypting backup with AES-256-GCM...
-✅ Backup encrypted (892KB after compression)
-🔍 Verifying backup integrity...
-✅ Backup verification successful
-📊 Backup completed: vaultwarden-db-20241014-173025.backup
-   Size: 892KB (compressed from 2.3MB)
-   Location: /var/lib/vaultwarden-oci-minimal/backups/db/
-   Encryption: AES-256-GCM
-   Integrity: SHA-256 verified
+# Custom database backup location
+./tools/db-backup.sh --output-dir /custom/backup/path/
+
+# Database backup with custom retention
+./tools/db-backup.sh --retention-days 60
+
+# Test backup creation (dry run)
+./tools/db-backup.sh --dry-run
 ```
 
-#### **Multiple Format Backups**
+#### Full System Backup
 ```bash
-# Binary format (default - fastest)
-./tools/db-backup.sh --format binary
-
-# SQL format (portable, human-readable)
-./tools/db-backup.sh --format sql
-
-# JSON format (structured data export)
-./tools/db-backup.sh --format json
-
-# CSV format (individual table exports)
-./tools/db-backup.sh --format csv
-
-# All formats (comprehensive backup)
-./tools/db-backup.sh --format all
-```
-
-#### **Backup Verification**
-```bash
-# Verify specific backup file
-./tools/db-backup.sh --verify /var/lib/*/backups/db/vaultwarden-db-20241014-173025.backup
-
-# Test backup without restoration (dry run)
-./tools/db-backup.sh --test-restore /var/lib/*/backups/db/latest.backup
-
-# Integrity check for all recent backups
-./tools/db-backup.sh --verify-all
-
-# Expected verification output:
-🔍 Verifying backup: vaultwarden-db-20241014-173025.backup
-✅ File exists and readable
-✅ Encryption verified (AES-256-GCM)
-✅ Decompression successful
-✅ SQLite integrity check passed
-✅ Data structure validation passed
-✅ Backup is valid and restorable
-```
-
-### **Backup Format Details**
-
-#### **Binary Format** (Default)
-```bash
-# Fastest backup method - direct SQLite file copy
-# Advantages:
-# - Fastest backup and restore
-# - Preserves all SQLite-specific features
-# - Smallest compressed size
-# - Native format compatibility
-
-# Use case: Regular automated backups
-./tools/db-backup.sh --format binary
-
-# File structure:
-vaultwarden-db-YYYYMMDD-HHMMSS.backup
-├── Encrypted container (AES-256-GCM)
-├── Compressed SQLite database (gzip)
-├── Integrity checksum (SHA-256)
-└── Metadata (timestamps, version info)
-```
-
-#### **SQL Format** (Portable)
-```bash
-# Human-readable SQL dump
-# Advantages:
-# - Cross-platform compatibility
-# - Human-readable and editable
-# - Easy to analyze or partially restore
-# - Good for migrations
-
-# Use case: Migration between servers, debugging
-./tools/db-backup.sh --format sql
-
-# Contents include:
-# - CREATE TABLE statements
-# - INSERT statements with data
-# - Index and constraint definitions
-# - Transaction boundaries for consistency
-```
-
-#### **JSON Format** (Structured)
-```bash
-# Structured JSON export
-# Advantages:
-# - Easy programmatic access
-# - Good for integration with other tools
-# - Selective data extraction possible
-# - API-friendly format
-
-# Use case: Data analysis, integration, selective restore
-./tools/db-backup.sh --format json
-
-# Structure:
-{
-  "metadata": {
-    "backup_time": "2024-10-14T17:30:25Z",
-    "version": "1.30.1",
-    "format": "json"
-  },
-  "users": [...],
-  "organizations": [...],
-  "ciphers": [...],
-  "folders": [...]
-}
-```
-
-#### **CSV Format** (Individual Tables)
-```bash
-# Individual CSV files per table
-# Advantages:
-# - Spreadsheet compatible
-# - Easy data analysis
-# - Selective table restoration
-# - Good for auditing
-
-# Use case: Data analysis, reporting, auditing
-./tools/db-backup.sh --format csv
-
-# Creates multiple files:
-backup-YYYYMMDD-HHMMSS/
-├── users.csv
-├── organizations.csv
-├── ciphers.csv
-├── folders.csv
-├── attachments.csv
-└── metadata.json
-```
-
-## 🔄 **Full System Backup**
-
-### **Complete System Snapshot**
-
-#### **Full System Backup Creation**
-```bash
-# Create comprehensive system backup
+# Create immediate full system backup
 ./tools/create-full-backup.sh
 
-# Backup process and output:
-🔍 Starting full system backup for VaultWarden-OCI-Minimal...
-📋 Pre-backup validation...
-✅ All containers healthy
-✅ Database accessible
-✅ Configuration files secure
-✅ Sufficient disk space available
+# Full backup excluding logs (faster, smaller)
+./tools/create-full-backup.sh --exclude-logs
 
-📦 Creating system snapshot...
-📄 Backing up configurations...
-   ✅ settings.json (600 bytes)
-   ✅ Caddy configuration (2.1KB)
-   ✅ Fail2ban rules (5.4KB)
-   ✅ Cron jobs (1.2KB)
+# Full backup with maximum compression
+./tools/create-full-backup.sh --compression 9
 
-💾 Backing up data...
-   ✅ VaultWarden database (2.3MB)
-   ✅ SSL certificates (15.2KB) 
-   ✅ User attachments (892KB)
-   ✅ Application logs (234KB)
-
-🔐 Encrypting and compressing...
-   📊 Original size: 3.8MB
-   📊 Compressed size: 1.2MB
-   🔒 Encryption: AES-256-GCM
-   
-✅ Full backup completed: vaultwarden-full-20241014-173025.tar.gz
-   Location: /var/lib/vaultwarden-oci-minimal/backups/full/
-   Size: 1.2MB (compressed from 3.8MB)
-   Backup time: 23 seconds
+# Custom backup location
+./tools/create-full-backup.sh --output-dir /external/storage/
 ```
 
-#### **Full Backup Contents**
+### Pre-Maintenance Backups
 ```bash
-# Full backup includes everything needed for complete restoration
-Full Backup Archive Contents:
-├── database/
-│   ├── db.sqlite3                    # Main database
-│   ├── attachments/                  # User file attachments
-│   └── sends/                        # Bitwarden Send files
-├── config/
-│   ├── settings.json                 # Main configuration
-│   ├── caddy/                        # Reverse proxy config
-│   ├── fail2ban/                     # Security configuration
-│   └── ssl/                          # Certificate backups
-├── logs/
-│   ├── vaultwarden/                  # Application logs
-│   ├── caddy/                        # Access logs
-│   └── system/                       # System logs
-├── metadata/
-│   ├── backup-info.json              # Backup metadata
-│   ├── system-info.json              # System information
-│   └── version-info.json             # Version tracking
-└── scripts/
-    ├── restore-instructions.md        # Recovery guide
-    └── validation-checksums.sha256     # Integrity verification
+# Create backup before system changes
+echo "Creating pre-maintenance backup..."
+./tools/create-full-backup.sh --output-dir /tmp/pre-maintenance/
+
+# Verify backup before proceeding
+./tools/restore.sh --verify /tmp/pre-maintenance/backup-full-*.tar.gz.enc
+
+# Proceed with maintenance only if backup verified
+if [ $? -eq 0 ]; then
+    echo "Backup verified. Proceeding with maintenance."
+    # Perform maintenance tasks
+else
+    echo "Backup verification failed. Aborting maintenance."
+    exit 1
+fi
 ```
 
-#### **Emergency Backup**
+## Backup Security and Encryption
+
+### Encryption Implementation
+
+#### Backup Encryption Details
+- **Algorithm**: AES-256-CBC (Advanced Encryption Standard)
+- **Key Derivation**: PBKDF2 with SHA-256
+- **Key Source**: `backup_passphrase` from encrypted secrets
+- **IV Generation**: Cryptographically secure random initialization vectors
+- **Authentication**: HMAC verification for integrity
+
+#### Managing Backup Passphrases
 ```bash
-# Create emergency backup (faster, essential data only)
-./tools/create-full-backup.sh --emergency
+# View current backup passphrase
+sudo ./tools/edit-secrets.sh --view | grep backup_passphrase
 
-# Emergency backup prioritizes:
-# - Database integrity
-# - Configuration files
-# - SSL certificates
-# - Recent logs only
-# - Skip large log files
-# - Faster completion time
+# Update backup passphrase (affects new backups only)
+sudo ./tools/edit-secrets.sh
+# Update backup_passphrase value
 
-# Use case: Before risky operations, incident response
+# Important: Keep old passphrases to access existing backups
+# Document passphrase changes with dates for backup access
 ```
 
-## 🔧 **Restore Procedures**
+### Backup Storage Security
 
-### **Interactive Restore System**
-
-#### **Guided Restoration Process**
+#### Local Storage Security
 ```bash
-# Launch interactive restore wizard
-./tools/restore.sh
+# Verify backup directory permissions
+ls -la $PROJECT_STATE_DIR/backups/
+# Should show 755 permissions (readable by owner and group)
 
-# Interactive restore flow:
-🔍 VaultWarden-OCI-Minimal Restore Wizard
+# Individual backup file permissions
+ls -la $PROJECT_STATE_DIR/backups/daily/*.enc
+# Should show 644 permissions (readable by owner)
 
-Available backup files:
-[1] vaultwarden-full-20241014-173025.tar.gz (1.2MB) - Full system
-[2] vaultwarden-full-20241013-000015.tar.gz (1.1MB) - Full system  
-[3] vaultwarden-db-20241014-173025.backup (892KB) - Database only
-[4] vaultwarden-db-20241014-010030.backup (891KB) - Database only
-[5] Browse custom path...
-
-Select backup to restore [1-5]: 1
-
-🔍 Analyzing backup: vaultwarden-full-20241014-173025.tar.gz
-✅ Backup file accessible and valid
-✅ Encryption verified
-✅ Integrity check passed
-📊 Backup contains:
-   - Database: 2.3MB (1,247 vault entries)
-   - Configuration: 8.7KB (4 files)
-   - SSL certificates: 15.2KB (2 domains)
-   - Logs: 234KB (7 days)
-
-⚠️  IMPORTANT: This will replace current data
-   Current database: 2.1MB (1,189 vault entries)
-   Data difference: +58 vault entries from backup
-
-Restore options:
-[1] Complete restoration (replace everything)
-[2] Database only (keep current configuration)
-[3] Configuration only (keep current database)
-[4] Preview contents (no changes made)
-[5] Cancel restoration
-
-Select restoration type [1-5]: 1
-
-🛑 Final confirmation required
-This will REPLACE all current VaultWarden data with backup from:
-Date: 2024-10-14 17:30:25 UTC
-Size: 1.2MB compressed (3.8MB uncompressed)
-
-Type 'RESTORE' to confirm: RESTORE
-
-🔧 Stopping services...
-✅ VaultWarden stopped gracefully
-✅ Related services stopped
-
-📦 Extracting backup...
-✅ Backup decrypted successfully
-✅ Archive extracted to temporary location
-✅ Integrity verification passed
-
-🔄 Restoring data...
-✅ Database restored (2.3MB)
-✅ Configuration restored (4 files)
-✅ SSL certificates restored
-✅ Permissions applied
-
-🚀 Restarting services...
-✅ Configuration validated
-✅ Services started successfully
-✅ Health checks passed
-
-✅ Restoration completed successfully!
-   Restored data from: 2024-10-14 17:30:25 UTC
-   Database entries: 1,247 vault items
-   Users affected: 8 accounts
-   Time taken: 45 seconds
-
-🔍 Post-restore verification:
-✅ VaultWarden accessible at https://your-domain.com
-✅ Database integrity confirmed
-✅ SSL certificates valid
-✅ All services healthy
-
-📋 Next steps:
-1. Test login with existing accounts
-2. Verify vault data accessibility
-3. Check admin panel functionality
-4. Notify users of any data changes (if applicable)
+# Secure backup directory (if needed)
+chmod 755 $PROJECT_STATE_DIR/backups/
+find $PROJECT_STATE_DIR/backups/ -name "*.enc" -exec chmod 644 {} \;
 ```
 
-### **Command-Line Restore Options**
-
-#### **Direct Restore Commands**
+#### Off-site Backup Security
 ```bash
-# Restore specific backup file
-./tools/restore.sh /var/lib/*/backups/full/vaultwarden-full-20241014-173025.tar.gz
+# Example: Secure cloud storage upload
+# Using rclone for encrypted cloud storage
 
-# Database-only restoration
-./tools/restore.sh --database-only /var/lib/*/backups/db/latest.backup
+# Configure rclone with encryption (one-time setup)
+rclone config create backup-encrypted crypt \
+  remote=your-cloud-storage: \
+  filename_encryption=standard \
+  directory_name_encryption=true \
+  password=$(echo "$BACKUP_PASSPHRASE" | base64)
 
-# Configuration-only restoration  
-./tools/restore.sh --config-only /var/lib/*/backups/full/latest.tar.gz
-
-# Dry run (test without making changes)
-./tools/restore.sh --dry-run /path/to/backup
-
-# Force restore (skip confirmations)
-./tools/restore.sh --force /path/to/backup
+# Upload backups to encrypted cloud storage
+rclone copy $PROJECT_STATE_DIR/backups/ backup-encrypted:vaultwarden-backups/ \
+  --transfers 1 --checkers 1 --bwlimit 10M
 ```
 
-#### **Selective Restore Operations**
+## Recovery Procedures
+
+### Database Recovery
+
+#### Database-Only Recovery
 ```bash
-# Restore specific components
-./tools/restore.sh --components="database,config" /path/to/backup
+# List available database backups
+./tools/restore.sh --list
 
-# Restore to different location (for analysis)
-./tools/restore.sh --target-dir=/tmp/restore-test /path/to/backup
+# Verify database backup integrity
+./tools/restore.sh --verify /path/to/db-backup-YYYYMMDD-HHMMSS.sqlite3.enc
 
-# Restore with time point recovery
-./tools/restore.sh --before="2024-10-14 16:00:00" /path/to/backup
+# Restore database only (preserves configuration)
+./tools/restore.sh --database-only /path/to/db-backup-YYYYMMDD-HHMMSS.sqlite3.enc
 
-# Restore user data only (exclude system config)
-./tools/restore.sh --user-data-only /path/to/backup
+# Recovery process:
+# 1. Stops VaultWarden service
+# 2. Backs up current database
+# 3. Decrypts and restores backup
+# 4. Verifies database integrity
+# 5. Restarts VaultWarden service
 ```
 
-### **Advanced Restore Scenarios**
-
-#### **Cross-Server Migration**
+#### Database Recovery Verification
 ```bash
-# Complete system migration to new server
+# After database recovery, verify integrity
+./tools/sqlite-maintenance.sh --check
 
-# On source server:
-./tools/create-full-backup.sh --migration
-# Creates: migration-backup-TIMESTAMP.tar.gz
+# Verify user data accessibility
+./tools/check-health.sh
 
-# Transfer to new server:
-scp /var/lib/*/backups/full/migration-backup-*.tar.gz user@new-server:/tmp/
+# Test user authentication
+curl -X POST https://your-domain.com/identity/accounts/prelogin \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com"}'
+```
 
-# On new server:
-# 1. Install VaultWarden-OCI-Minimal
-git clone https://github.com/killer23d/VaultWarden-OCI-Minimal.git
-cd VaultWarden-OCI-Minimal
-chmod +x startup.sh tools/*.sh
+### Full System Recovery
 
-# 2. Run migration restore
-sudo ./tools/restore.sh --migration /tmp/migration-backup-*.tar.gz
+#### Complete System Recovery
+```bash
+# List available full system backups
+./tools/restore.sh --list
 
-# 3. Update DNS/domain configuration
-sudo nano settings.json  # Update DOMAIN if needed
+# Verify full backup integrity before recovery
+./tools/restore.sh --verify /path/to/backup-full-YYYYMMDD-HHMMSS.tar.gz.enc
 
-# 4. Start services
+# Perform complete system recovery
+./tools/restore.sh /path/to/backup-full-YYYYMMDD-HHMMSS.tar.gz.enc
+
+# Full recovery process:
+# 1. Stops all services
+# 2. Creates current state backup
+# 3. Extracts backup contents
+# 4. Restores all components
+# 5. Verifies system integrity
+# 6. Restarts services
+# 7. Performs health checks
+```
+
+#### Post-Recovery Verification
+```bash
+# Comprehensive post-recovery verification
+./tools/check-health.sh --verbose
+
+# Service status verification
+docker compose ps
+
+# Configuration integrity check
+./startup.sh --validate
+
+# SSL certificate verification
+echo | openssl s_client -connect your-domain.com:443 2>/dev/null | \
+  openssl x509 -noout -dates
+
+# User access verification
+curl -I https://your-domain.com
+```
+
+### Selective Recovery Options
+
+#### Configuration-Only Recovery
+```bash
+# Extract only configuration from full backup
+./tools/restore.sh --config-only /path/to/backup-full-YYYYMMDD-HHMMSS.tar.gz.enc
+
+# This restores:
+# • settings.json
+# • docker-compose.yml
+# • Caddy configuration
+# • Fail2ban configuration
+# But preserves current database
+```
+
+#### Certificate Recovery
+```bash
+# Extract SSL certificates from backup
+./tools/restore.sh --certificates-only /path/to/backup-full-YYYYMMDD-HHMMSS.tar.gz.enc
+
+# Manually extract certificates if needed
+openssl enc -d -aes-256-cbc -in backup-full-YYYYMMDD-HHMMSS.tar.gz.enc \
+  -pass pass:$BACKUP_PASSPHRASE | \
+  tar -xzf - caddy_data/
+
+# Restart Caddy to use restored certificates
+docker compose restart caddy
+```
+
+## Disaster Recovery Planning
+
+### Recovery Time Objectives (RTO)
+
+#### Target Recovery Times
+- **Database Recovery**: < 15 minutes
+- **Full System Recovery**: < 30 minutes
+- **Service Restoration**: < 5 minutes (after recovery)
+- **User Access Restoration**: < 45 minutes total
+
+#### Recovery Scenarios and Procedures
+
+**Scenario 1: Database Corruption**
+```bash
+# 1. Immediate Response (< 2 minutes)
+docker compose stop vaultwarden
+cp $PROJECT_STATE_DIR/data/bwdata/db.sqlite3 /tmp/corrupted-db.sqlite3
+
+# 2. Recovery Execution (< 10 minutes)
+./tools/restore.sh --database-only /path/to/recent/db-backup.sqlite3.enc
+
+# 3. Verification and Service Restart (< 3 minutes)
+./tools/sqlite-maintenance.sh --check
 ./startup.sh
 ```
 
-#### **Disaster Recovery**
+**Scenario 2: Complete Server Failure**
 ```bash
-# Complete disaster recovery from off-site backup
+# 1. New Server Setup (< 15 minutes)
+# Deploy fresh Ubuntu 24.04 server
+git clone https://github.com/killer23d/VaultWarden-OCI-NG.git
+cd VaultWarden-OCI-NG
+chmod +x startup.sh tools/*.sh lib/*.sh
 
-# Prerequisites:
-# - Fresh Ubuntu 24.04 server
-# - VaultWarden-OCI-Minimal repository
-# - Off-site backup file accessible
+# 2. Restore Age Keys (< 2 minutes)
+# Restore age-key.txt from secure offline storage
+sudo mkdir -p secrets/keys/
+sudo cp /secure/storage/age-key.txt secrets/keys/
+sudo chmod 600 secrets/keys/age-key.txt
 
-# Recovery procedure:
-# 1. Basic system setup
-sudo apt update && sudo apt upgrade -y
-git clone https://github.com/killer23d/VaultWarden-OCI-Minimal.git
-cd VaultWarden-OCI-Minimal
-chmod +x startup.sh tools/*.sh
+# 3. System Recovery (< 10 minutes)
+sudo ./tools/init-setup.sh --auto
+./tools/restore.sh /path/to/backup-full-YYYYMMDD-HHMMSS.tar.gz.enc
 
-# 2. Disaster recovery restoration
-sudo ./tools/restore.sh --disaster-recovery /path/to/offsite/backup.tar.gz
-
-# The disaster recovery mode:
-# - Skips certain validation checks
-# - Automatically installs missing dependencies
-# - Recreates system structure from backup
-# - Handles potential hostname/IP changes
-# - Provides detailed recovery logging
-
-# 3. Post-recovery validation
-./startup.sh --validate
-./tools/monitor.sh --comprehensive-check
+# 4. Final Verification (< 3 minutes)
+./startup.sh
+./tools/check-health.sh
 ```
 
-#### **Partial Data Recovery**
+### Backup Testing and Validation
+
+#### Regular Backup Testing Schedule
+- **Weekly**: Verify one random backup file integrity
+- **Monthly**: Perform database recovery test (in test environment)
+- **Quarterly**: Full disaster recovery simulation
+
+#### Backup Testing Procedures
 ```bash
-# Recover specific user data or vault items
-
-# Extract backup for analysis
-./tools/restore.sh --extract-only /path/to/backup /tmp/analysis/
-
-# Convert to JSON for selective recovery
-./tools/db-backup.sh --format json --input /tmp/analysis/database/db.sqlite3
-
-# Selectively restore specific users/organizations
-./tools/restore.sh --selective-users="user1@example.com,user2@example.com" /path/to/backup
-
-# Merge data from backup (add missing entries without replacement)
-./tools/restore.sh --merge-mode /path/to/backup
-```
-
-## 🔐 **Backup Security and Encryption**
-
-### **Encryption Implementation**
-
-#### **Backup Encryption Details**
-```bash
-# Encryption specifications:
-Algorithm: AES-256-GCM (Galois/Counter Mode)
-Key Derivation: PBKDF2 with 100,000 iterations
-Salt: 32 bytes random (unique per backup)
-Authentication: Built-in GCM authentication tag
-Compression: gzip before encryption (reduces size ~70%)
-
-# Passphrase management:
-# - Generated during init-setup.sh (32 bytes, base64 encoded)
-# - Stored securely in settings.json (600 permissions)
-# - Can be rotated without affecting existing backups
-# - Each backup can use different passphrase if needed
-```
-
-#### **Encryption Verification**
-```bash
-# Verify backup encryption
-./tools/db-backup.sh --test-encryption
-
-# Test encryption/decryption cycle
-BACKUP_FILE="/var/lib/*/backups/db/latest.backup"
-./tools/restore.sh --verify-encryption "$BACKUP_FILE"
-
-# Expected output:
-🔐 Testing backup encryption for: latest.backup
-✅ File header indicates AES-256-GCM encryption
-✅ Passphrase authentication successful
-✅ Decryption completed without errors
-✅ Data integrity verified post-decryption
-✅ Re-encryption test successful
-🔒 Backup encryption is functioning correctly
-```
-
-#### **Passphrase Management**
-```bash
-# View current backup passphrase (secure environment only)
-sudo jq -r '.BACKUP_PASSPHRASE' settings.json
-
-# Generate new backup passphrase
-NEW_PASSPHRASE=$(openssl rand -base64 32)
-
-# Update configuration with new passphrase
-sudo jq --arg pass "$NEW_PASSPHRASE" '.BACKUP_PASSPHRASE = $pass' settings.json > temp.json
-sudo mv temp.json settings.json
-sudo chmod 600 settings.json
-
-# Note: Existing backups use their original passphrase
-# New backups will use the updated passphrase
-```
-
-### **Backup Integrity and Verification**
-
-#### **Multi-Layer Integrity Checking**
-```bash
-# Integrity verification layers:
-1. File-level checksums (SHA-256)
-2. Encryption authentication (GCM tag)
-3. Compression integrity (gzip CRC)
-4. Database integrity (SQLite PRAGMA)
-5. Data structure validation
-6. Application-level consistency checks
-
-# Comprehensive integrity verification
-./tools/restore.sh --verify-all
-
-# Expected verification levels:
-🔍 Comprehensive Backup Verification
-
-Level 1 - File System:
-✅ All backup files exist and readable
-✅ File sizes match expected ranges
-✅ Timestamps within acceptable bounds
-✅ No filesystem corruption detected
-
-Level 2 - Encryption & Compression:
-✅ All backups decrypt successfully
-✅ GCM authentication tags valid
-✅ Compression integrity verified
-✅ No data corruption in transit/storage
-
-Level 3 - Database Integrity:
-✅ SQLite integrity checks passed
-✅ Foreign key constraints satisfied
-✅ Index consistency verified
-✅ Transaction log clean
-
-Level 4 - Application Consistency:
-✅ User account data consistent
-✅ Organization relationships valid
-✅ Vault item encryption verifiable
-✅ Attachment references correct
-
-Level 5 - System Integration:
-✅ Configuration syntax valid
-✅ SSL certificate chains complete
-✅ Service dependencies satisfied
-✅ Version compatibility confirmed
-
-🎯 All verification levels passed
-   Total backups verified: 15
-   Issues found: 0
-   Verification time: 2m 34s
-```
-
-## 📋 **Backup Maintenance and Management**
-
-### **Automated Backup Management**
-
-#### **Retention Policy Management**
-```bash
-# Default retention policies (configured during setup):
-Database Backups: 30 days (configurable via BACKUP_KEEP_DB)
-Full System Backups: 8 weeks (configurable via BACKUP_KEEP_FULL)
-Emergency Backups: 90 days (manual cleanup)
-Migration Backups: Indefinite (manual cleanup)
-
-# View current retention settings
-jq -r '.BACKUP_KEEP_DB, .BACKUP_KEEP_FULL' settings.json
-
-# Custom retention policy
-sudo jq '.BACKUP_KEEP_DB = 45 | .BACKUP_KEEP_FULL = 12' settings.json > temp.json
-sudo mv temp.json settings.json
-
-# Manual cleanup with custom retention
-find /var/lib/*/backups/db -name "*.backup" -mtime +45 -delete
-find /var/lib/*/backups/full -name "*.tar.gz" -mtime +84 -delete
-```
-
-#### **Backup Space Management**
-```bash
-# Monitor backup storage usage
-./tools/monitor.sh --backup-space
-
-# Expected output:
-📊 Backup Storage Analysis
-
-Location: /var/lib/vaultwarden-oci-minimal/backups/
-Total Size: 45.2MB
-Available Space: 12.3GB (99.6% free)
-
-Database Backups (db/):
-- Count: 30 files
-- Size: 25.1MB (avg: 837KB per backup)
-- Oldest: 28 days ago
-- Growth: +28KB/day average
-
-Full Backups (full/):
-- Count: 8 files  
-- Size: 20.1MB (avg: 2.5MB per backup)
-- Oldest: 56 days ago
-- Growth: +2.1MB/week average
-
-Recommendations:
-✅ Storage usage healthy
-✅ Growth rate sustainable
-✅ Retention policy appropriate
-⚠️  Consider off-site storage for disaster recovery
-```
-
-#### **Backup Health Monitoring**
-```bash
-# Automated backup health checks (via cron)
-30 1 * * * root cd /opt/VaultWarden-OCI-Minimal && ./tools/restore.sh --verify-recent 2>&1 | logger -t backup-verify
-
-# Manual backup health assessment
-./tools/create-full-backup.sh --health-check
-
-# Backup system diagnostics
-./tools/monitor.sh --backup-diagnostics
-
-# Expected diagnostics output:
-🏥 Backup System Health Diagnostics
-
-Backup Schedule Status:
-✅ Daily database backup: Active (next in 6h 23m)
-✅ Weekly full backup: Active (next in 2d 6h 23m)  
-✅ Backup verification: Active (last run 30m ago)
-✅ Cleanup job: Active (last run 4h 30m ago)
-
-Recent Backup Activity:
-✅ Last database backup: 23h ago (success)
-✅ Last full backup: 6d 23h ago (success)
-✅ Last verification: 30m ago (15 backups verified)
-✅ Last cleanup: 4h 30m ago (2 old files removed)
-
-Backup Quality Metrics:
-✅ Success rate (30 days): 100% (30/30)
-✅ Average backup time: 18 seconds
-✅ Average backup size: 892KB (database)
-✅ Compression ratio: 71% average
-✅ Verification success rate: 100%
-
-Storage Health:
-✅ Backup directory accessible
-✅ Sufficient disk space (12.3GB available)
-✅ No filesystem errors detected
-✅ Backup permissions secure (700)
-
-Issues Found: None
-Recommendations: Consider implementing off-site backup storage
-```
-
-### **Off-Site Backup Integration**
-
-#### **Cloud Storage Integration**
-```bash
-# The backup system creates local encrypted backups
-# For off-site storage, use standard cloud sync tools:
-
-# Example: Rclone integration for cloud storage
-# 1. Install rclone
-sudo apt install rclone
-
-# 2. Configure cloud provider (interactive)
-rclone config
-
-# 3. Create off-site sync script
-cat > /opt/VaultWarden-OCI-Minimal/tools/offsite-sync.sh << 'EOF'
+# Create backup testing script
+cat > tools/test-backups.sh << 'EOF'
 #!/bin/bash
-# Sync backups to cloud storage
-BACKUP_DIR="/var/lib/$(basename $(pwd))/backups"
-CLOUD_REMOTE="mycloud:vaultwarden-backups"
+source "$(dirname "$0")/../lib/logging.sh"
 
-# Sync recent backups only (last 7 days)
-rclone sync "$BACKUP_DIR" "$CLOUD_REMOTE" \
-  --max-age 7d \
-  --progress \
-  --log-file /var/log/offsite-backup.log
+BACKUP_DIR="$PROJECT_STATE_DIR/backups"
+TEST_DIR="/tmp/backup-test-$$"
 
-# Verify cloud backup integrity
-rclone check "$BACKUP_DIR" "$CLOUD_REMOTE" \
-  --max-age 7d \
-  --one-way
+# Test random backup file integrity
+random_backup=$(find $BACKUP_DIR -name "*.enc" -type f | shuf -n 1)
+if [ -n "$random_backup" ]; then
+    _log_info "Testing backup: $(basename $random_backup)"
+
+    if ./tools/restore.sh --verify "$random_backup"; then
+        _log_success "Backup integrity verified"
+    else
+        _log_error "Backup integrity test FAILED: $random_backup"
+        exit 1
+    fi
+else
+    _log_warning "No backup files found for testing"
+fi
+
+# Test backup decryption (without restoration)
+mkdir -p $TEST_DIR
+if echo "$BACKUP_PASSPHRASE" | openssl enc -d -aes-256-cbc -in "$random_backup" -pass stdin > $TEST_DIR/test-extract 2>/dev/null; then
+    _log_success "Backup decryption successful"
+    rm -rf $TEST_DIR
+else
+    _log_error "Backup decryption FAILED"
+    rm -rf $TEST_DIR
+    exit 1
+fi
 EOF
 
-chmod +x /opt/VaultWarden-OCI-Minimal/tools/offsite-sync.sh
+chmod +x tools/test-backups.sh
 
-# 4. Add to cron (daily off-site sync)
-echo "0 6 * * * root /opt/VaultWarden-OCI-Minimal/tools/offsite-sync.sh" >> /etc/crontab
+# Schedule weekly backup testing
+echo "0 4 * * 1 /path/to/tools/test-backups.sh >> /var/log/backup-tests.log 2>&1" | crontab -
 ```
 
-#### **Backup Testing and Validation**
+## Advanced Backup Configurations
+
+### Cloud Storage Integration
+
+#### AWS S3 Backup Integration
 ```bash
-# Regular backup testing procedures (monthly recommended)
+# Install AWS CLI
+sudo apt install awscli
 
-# 1. Complete backup verification
-./tools/restore.sh --verify-all
+# Configure AWS credentials
+aws configure
+# AWS Access Key ID: YOUR_ACCESS_KEY
+# AWS Secret Access Key: YOUR_SECRET_KEY
+# Default region: us-east-1
 
-# 2. Test restoration to temporary environment
-mkdir -p /tmp/restore-test
-./tools/restore.sh --target-dir /tmp/restore-test --test-mode /path/to/recent/backup
+# Create S3 backup sync script
+cat > tools/s3-backup-sync.sh << 'EOF'
+#!/bin/bash
+source "$(dirname "$0")/../lib/logging.sh"
 
-# 3. Cross-server restoration test
-# Transfer backup to test server and perform full restoration
+S3_BUCKET="your-vaultwarden-backups"
+BACKUP_DIR="$PROJECT_STATE_DIR/backups"
 
-# 4. Data integrity verification
-./tools/restore.sh --data-integrity-check /path/to/backup
+# Sync backups to S3 with encryption
+aws s3 sync $BACKUP_DIR s3://$S3_BUCKET/$(hostname)/ \
+    --exclude "*" \
+    --include "*.enc" \
+    --storage-class STANDARD_IA \
+    --delete
 
-# 5. Performance testing
-./tools/restore.sh --performance-test /path/to/backup
+if [ $? -eq 0 ]; then
+    _log_success "Backup sync to S3 completed"
+else
+    _log_error "Backup sync to S3 failed"
+    exit 1
+fi
+EOF
 
-# 6. Document test results
-./tools/create-backup-test-report.sh
+chmod +x tools/s3-backup-sync.sh
+
+# Schedule daily S3 sync after backups
+echo "30 2 * * * /path/to/tools/s3-backup-sync.sh >> /var/log/s3-sync.log 2>&1" | crontab -
 ```
 
-This comprehensive backup and restore system ensures your VaultWarden data is protected with enterprise-grade reliability while maintaining simplicity for small team operations."""
+#### Google Cloud Storage Integration
+```bash
+# Install Google Cloud SDK
+curl https://sdk.cloud.google.com | bash
+exec -l $SHELL
+gcloud init
+
+# Create GCS backup sync script
+cat > tools/gcs-backup-sync.sh << 'EOF'
+#!/bin/bash
+source "$(dirname "$0")/../lib/logging.sh"
+
+GCS_BUCKET="your-vaultwarden-backups"
+BACKUP_DIR="$PROJECT_STATE_DIR/backups"
+
+# Sync to Google Cloud Storage
+gsutil -m rsync -r -x ".*\.(?!enc$)" $BACKUP_DIR gs://$GCS_BUCKET/$(hostname)/
+
+if [ $? -eq 0 ]; then
+    _log_success "Backup sync to GCS completed"
+else
+    _log_error "Backup sync to GCS failed"
+    exit 1
+fi
+EOF
+
+chmod +x tools/gcs-backup-sync.sh
+```
+
+### PostgreSQL Migration Backup
+
+#### Preparing for PostgreSQL Migration
+```bash
+# Create PostgreSQL migration backup
+cat > tools/postgres-migration-backup.sh << 'EOF'
+#!/bin/bash
+source "$(dirname "$0")/../lib/logging.sh"
+
+BACKUP_DIR="$PROJECT_STATE_DIR/backups/migration"
+mkdir -p $BACKUP_DIR
+
+# Stop services
+docker compose down
+
+# Create comprehensive migration backup
+_log_info "Creating PostgreSQL migration backup..."
+
+# SQLite database export
+sqlite3 $PROJECT_STATE_DIR/data/bwdata/db.sqlite3 .dump > $BACKUP_DIR/sqlite-dump.sql
+
+# Full system backup
+./tools/create-full-backup.sh --output-dir $BACKUP_DIR
+
+# Create migration documentation
+cat > $BACKUP_DIR/migration-info.txt << EOL
+Migration Backup Created: $(date)
+Original Database: SQLite
+Target Database: PostgreSQL
+SQLite File Size: $(du -h $PROJECT_STATE_DIR/data/bwdata/db.sqlite3 | cut -f1)
+User Count: $(echo "SELECT COUNT(*) FROM users;" | sqlite3 $PROJECT_STATE_DIR/data/bwdata/db.sqlite3)
+Vault Items: $(echo "SELECT COUNT(*) FROM cipher;" | sqlite3 $PROJECT_STATE_DIR/data/bwdata/db.sqlite3)
+EOL
+
+_log_success "PostgreSQL migration backup completed"
+EOF
+
+chmod +x tools/postgres-migration-backup.sh
+```
+
+## Troubleshooting Backup Issues
+
+### Common Backup Problems
+
+#### Backup Creation Failures
+```bash
+# Diagnose backup creation issues
+./tools/create-full-backup.sh --dry-run
+
+# Check available disk space
+df -h $PROJECT_STATE_DIR
+
+# Verify backup directory permissions
+ls -la $PROJECT_STATE_DIR/backups/
+
+# Test backup encryption
+echo "test" | openssl enc -aes-256-cbc -pass pass:test -out /tmp/test.enc
+openssl enc -d -aes-256-cbc -pass pass:test -in /tmp/test.enc
+rm /tmp/test.enc
+```
+
+#### Backup Corruption Issues
+```bash
+# Test backup file integrity
+./tools/restore.sh --verify /path/to/suspected/backup.enc
+
+# Manual backup verification
+file /path/to/backup.enc
+# Should show: "data" (encrypted file)
+
+# Test decryption without restoration
+openssl enc -d -aes-256-cbc -in backup.enc -pass pass:PASSPHRASE | tar -tzf -
+```
+
+#### Recovery Failures
+```bash
+# Diagnose recovery issues
+./tools/restore.sh --dry-run /path/to/backup.enc
+
+# Check backup passphrase
+sudo ./tools/edit-secrets.sh --view | grep backup_passphrase
+
+# Verify sufficient disk space for recovery
+df -h $PROJECT_STATE_DIR
+
+# Manual decryption test
+openssl enc -d -aes-256-cbc -in backup.enc -pass pass:PASSPHRASE -out test-extract.tar.gz
+tar -tzf test-extract.tar.gz | head -20
+rm test-extract.tar.gz
+```
+
+This comprehensive backup and recovery guide ensures your VaultWarden-OCI-NG deployment is protected against data loss and provides reliable recovery procedures for various failure scenarios.
