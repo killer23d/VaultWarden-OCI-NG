@@ -110,22 +110,3 @@ sudo ./tools/edit-secrets.sh --view
 
 ---
 
-## 🗑️ Files to Delete
-
-To finalize the simplification of your project, the following files and directories are no longer needed and should be deleted:
-
-- `tools/migrate-from-oci.sh` (Legacy migration tool)
-- `tools/ci-validate.sh` (Development/CI tool)
-- `tools/test-sops-integration.sh` (Development/CI tool)
-- `tools/rotate-secrets.sh` (Merged into `edit-secrets.sh`)
-- `tools/rotate-all-secrets.sh` (Merged into `edit-secrets.sh`)
-- `tools/rotate-admin-token.sh` (Merged into `edit-secrets.sh`)
-- `tools/sops-maintenance.sh` (Merged into `check-health.sh`)
-- `tools/update-secrets.sh` (Redundant token generator)
-- `tools/seal-secrets.sh` (Development/CI tool)
-- `tools/startup.sh` (The one in `tools`, keep the one in the root directory)
-- `tools/settings.env` (Replaced by the unified `settings.env.example` at the root)
-- `docker-compose.swarm.yml` (Over-engineered for a small deployment)
-
----
-
