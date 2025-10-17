@@ -1,0 +1,83 @@
+[DEFAULT]
+# Enhanced default settings
+bantime = 24h
+findtime = 1h
+maxretry = 5
+backend = auto
+ignoreip = 127.0.0.1/8 ::1
+
+# This section is dynamically configured by init-setup.sh
+# It will set the appropriate action based on Cloudflare configuration.
+banaction = {{FAIL2BAN_ACTION}}
+
+# Email notifications (optional - configure SMTP)
+# destemail = admin@yourdomain.com
+# sendername = Fail2Ban-VaultWarden
+# mta = sendmail
+# action = %(action_mwl)s
+
+[caddy-json]
+# Primary jail for HTTP auth failures (401/403) via Caddy JSON logs
+enabled = true
+filter = caddy-json
+logpath = /var/log/caddy/access.log
+ports = 80,443
+maxretry = 8
+findtime = 30m
+bantime = 12h
+
+[vaultwarden-auth]
+# VaultWarden authentication failures
+enabled = true
+filter = vaultwarden
+logpath = /var/log/vaultwarden/vaultwarden.log
+ports = 80,443
+maxretry = 5
+findtime = 10m
+bantime = 2h
+
+[vaultwarden-admin]
+# VaultWarden admin panel protection
+enabled = true
+filter = vaultwarden-admin
+logpath = /var/log/vaultwarden/vaultwarden.log
+ports = 80,443
+maxretry = 3
+findtime = 10m
+bantime = 6h
+
+[recidive]
+# Repeat offenders - ban longer for previously banned IPs
+enabled = true
+filter = recidive
+logpath = /var/log/fail2ban.log
+bantime = 168h  # 1 week
+findtime = 24h
+maxretry = 3
+
+[caddy-404]
+enabled = true
+filter = caddy-404
+logpath = /var/log/caddy/access.log
+ports = 80,443
+maxretry = 20
+findtime = 10m
+bantime = 12h
+
+[caddy-bad-bots]
+enabled = true
+filter = caddy-bad-bots
+logpath = /var/log/caddy/access.log
+ports = 80,443
+maxretry = 1
+findtime = 10m
+bantime = 12h
+
+[caddy-vulnerability-scan]
+enabled = true
+filter = caddy-vulnerability-scan
+logpath = /var/log/caddy/access.log
+ports = 80,443
+maxretry = 2
+findtime = 10m
+bantime = 24h

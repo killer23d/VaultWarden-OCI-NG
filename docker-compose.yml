@@ -1,0 +1,266 @@
+version: "3.9"
+
+# Docker secrets for SOPS+Age integration
+secrets:
+  admin_token:
+    file: ${DOCKER_SECRETS_DIR}/admin_token
+  smtp_password:
+    file: ${DOCKER_SECRETS_DIR}/smtp_password
+  backup_passphrase:
+    file: ${DOCKER_SECRETS_DIR}/backup_passphrase
+  push_installation_key:
+    file: ${DOCKER_SECRETS_DIR}/push_installation_key
+  cloudflare_api_token:
+    file: ${DOCKER_SECRETS_DIR}/cloudflare_api_token
+
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: ${CONTAINER_NAME_VAULTWARDEN:-${COMPOSE_PROJECT_NAME}_vaultwarden}
+    restart: unless-stopped
+    environment:
+      - DOMAIN=${DOMAIN}
+      # Use Docker secrets instead of direct environment variables for sensitive data
+      - ADMIN_TOKEN_FILE=/run/secrets/admin_token
+      - ROCKET_PORT=8080
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/db.sqlite3}
+      - SIGNUPS_ALLOWED=${SIGNUPS_ALLOWED:-false}
+      - WEBSOCKET_ENABLED=${WEBSOCKET_ENABLED:-false}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURITY=${SMTP_SECURITY:-starttls}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      # Use Docker secret for SMTP password
+      - SMTP_PASSWORD_FILE=/run/secrets/smtp_password
+      - PUSH_ENABLED=${PUSH_ENABLED:-false}
+      - PUSH_INSTALLATION_ID=${PUSH_INSTALLATION_ID:-}
+      # Use Docker secret for push installation key
+      - PUSH_INSTALLATION_KEY_FILE=/run/secrets/push_installation_key
+      - PUSH_RELAY_URI=${PUSH_RELAY_URI:-https://api.bitwarden.com}
+      - LOG_FILE=/logs/vaultwarden.log
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
+      - EXTENDED_LOGGING=${EXTENDED_LOGGING:-true}
+      - TZ=${TZ:-UTC}
+      # Backup passphrase as Docker secret
+      - BACKUP_PASSPHRASE_FILE=/run/secrets/backup_passphrase
+    secrets:
+      - admin_token
+      - smtp_password
+      - backup_passphrase
+      - push_installation_key
+    volumes:
+      - ${PROJECT_STATE_DIR}/data/bwdata:/data
+      - ${PROJECT_STATE_DIR}/logs/vaultwarden:/logs
+    deploy:
+      resources:
+        limits:
+          memory: ${VAULTWARDEN_MEMORY_LIMIT:-2G}
+          cpus: '1.0'
+        reservations:
+          memory: ${VAULTWARDEN_MEMORY_RESERVATION:-512M}
+          cpus: '0.5'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-fsSL", "http://localhost:8080/alive"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  caddy:
+    image: caddy:latest
+    container_name: ${CONTAINER_NAME_CADDY:-${COMPOSE_PROJECT_NAME}_caddy}
+    restart: unless-stopped
+    ports: ["80:80","443:443"]
+    environment:
+      - DOMAIN=${DOMAIN}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_BASIC_AUTH_HASH=${ADMIN_BASIC_AUTH_HASH}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy:/etc/caddy-extra:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ${PROJECT_STATE_DIR}/logs/caddy:/var/log/caddy
+    deploy:
+      resources:
+        limits:
+          memory: ${CADDY_MEMORY_LIMIT:-512M}
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      vaultwarden:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsSL", "http://localhost:2019/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: ${CONTAINER_NAME_FAIL2BAN:-${COMPOSE_PROJECT_NAME}_fail2ban}
+    restart: unless-stopped
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - TZ=${TZ:-UTC}
+      - F2B_LOG_LEVEL=${F2B_LOG_LEVEL:-INFO}
+      - F2B_DB_PURGE_AGE=${F2B_DB_PURGE_AGE:-2d}
+      - F2B_MAX_RETRY=${F2B_MAX_RETRY:-5}
+      - F2B_DEST_MAIL=${ADMIN_EMAIL:-root@localhost}
+      # CloudFlare API token access via secret
+      - CLOUDFLARE_API_TOKEN_FILE=/run/secrets/cloudflare_api_token
+    secrets:
+      - cloudflare_api_token
+    volumes:
+      - ./fail2ban:/data
+      - ${PROJECT_STATE_DIR}/logs/caddy:/var/log/caddy:ro
+      - ${PROJECT_STATE_DIR}/logs/vaultwarden:/var/log/vaultwarden:ro
+      - ${PROJECT_STATE_DIR}/logs/fail2ban:/var/log:rw
+    deploy:
+      resources:
+        limits:
+          memory: ${FAIL2BAN_MEMORY_LIMIT:-256M}
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    depends_on:
+      - caddy
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: ${CONTAINER_NAME_WATCHTOWER:-${COMPOSE_PROJECT_NAME}_watchtower}
+    restart: unless-stopped
+    command:
+      - --cleanup
+      - --include-restarting
+      - --rolling-restart
+      - --label-enable
+      - --notification-email-from=${SMTP_FROM:-watchtower@localhost}
+      - --notification-email-to=${ADMIN_EMAIL:-root@localhost}
+      - --notification-email-server=${SMTP_HOST:-}
+      - --notification-email-server-port=${SMTP_PORT:-587}
+      - --notification-email-server-user=${SMTP_USERNAME:-}
+      # Use Docker secret for SMTP password in Watchtower
+      - --notification-email-server-password-file=/run/secrets/smtp_password
+      - --notification-email-delay=2
+      - --stop-timeout=120s
+    environment:
+      - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE:-0 0 4 * * 1#1}
+      - WATCHTOWER_TIMEOUT=${WATCHTOWER_TIMEOUT:-300}
+      - TZ=${TZ:-UTC}
+      - WATCHTOWER_NOTIFICATIONS=${WATCHTOWER_NOTIFICATIONS:-email}
+    secrets:
+      - smtp_password
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  ddclient:
+    image: lscr.io/linuxserver/ddclient:latest
+    container_name: ${CONTAINER_NAME_DDCLIENT:-${COMPOSE_PROJECT_NAME}_ddclient}
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-UTC}
+      - DDCLIENT_ENABLED=${DDCLIENT_ENABLED:-false}
+      # CloudFlare API token for DDNS updates
+      - CLOUDFLARE_API_TOKEN_FILE=/run/secrets/cloudflare_api_token
+    secrets:
+      - cloudflare_api_token
+    volumes:
+      - ./ddclient:/config
+      - ${PROJECT_STATE_DIR}/logs/ddclient:/var/log/ddclient
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+        reservations:
+          memory: 64M
+          cpus: '0.05'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /config/ddclient.conf ] && pgrep ddclient || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    profiles:
+      - ddns
+
+volumes:
+  caddy_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PROJECT_STATE_DIR}/caddy_data
+  caddy_config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PROJECT_STATE_DIR}/caddy_config
+
+networks:
+  default:
+    name: ${COMPOSE_PROJECT_NAME:-vaultwarden}_network
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${DOCKER_SUBNET:-172.20.0.0/24}
+    driver_opts:
+      com.docker.network.bridge.name: ${COMPOSE_PROJECT_NAME:-vw}-br0
+      com.docker.network.driver.mtu: 1500
