@@ -1,863 +1,662 @@
 # Operations Runbook
 
-> **🎯 Operations Philosophy**: Comprehensive operational procedures for day-to-day management, incident response, and troubleshooting of VaultWarden-OCI-Minimal deployments.
+This comprehensive operations runbook provides step-by-step procedures for managing, maintaining, and troubleshooting the VaultWarden-OCI-NG stack in production environments.
 
-## 📋 **Operations Overview**
+## Runbook Overview
 
-This runbook provides **step-by-step procedures** for all operational scenarios encountered in managing VaultWarden-OCI-Minimal:
+### Purpose and Scope
+This runbook serves as the definitive guide for:
+- **Daily Operations**: Routine tasks and health monitoring
+- **Incident Response**: Structured problem resolution procedures
+- **Maintenance Activities**: Scheduled and unscheduled maintenance
+- **Emergency Procedures**: Critical incident handling and recovery
 
+### Operations Team Structure
+- **Primary Operator**: Daily monitoring and routine maintenance
+- **Secondary Operator**: Backup support and specialized procedures
+- **Escalation Contact**: Senior technical support for critical issues
+- **Management**: Business impact assessment and communication
+
+## Daily Operations Procedures
+
+### Morning Health Check (Daily - 08:00)
+
+#### Standard Health Assessment
 ```bash
-Operations Categories:
-├── Daily Operations (Monitoring, Health Checks)
-├── User Management (Account Creation, Access Control)
-├── Incident Response (Outages, Security Events)
-├── Performance Management (Optimization, Scaling)
-├── Change Management (Updates, Configuration Changes)
-├── Backup and Recovery (Data Protection, Restoration)
-├── Security Operations (Threat Response, Access Review)
-└── Compliance and Auditing (Reporting, Documentation)
+# Execute comprehensive morning health check
+./tools/check-health.sh
+
+# Expected output confirmation:
+# ✅ All containers healthy
+# ✅ SSL certificate valid  
+# ✅ Database integrity confirmed
+# ✅ Backup system operational
+# ✅ Security systems active
 ```
 
-### **Operations Team Roles**
+#### Resource Utilization Review
 ```bash
-Operational Responsibilities:
-
-Primary Administrator:
-├── System health monitoring
-├── Security event response
-├── Backup verification
-├── User account management
-├── Configuration changes
-└── Incident coordination
-
-Secondary Administrator (Backup):
-├── Emergency access capability
-├── Incident response support
-├── Knowledge transfer maintenance
-├── Documentation updates
-└── Compliance reporting
-
-Emergency Contact:
-├── After-hours incident escalation
-├── Critical security event notification
-├── Service outage communication
-└── Disaster recovery coordination
-```
-
-## 🔄 **Daily Operations**
-
-### **Morning Health Check (5 minutes)**
-
-#### **System Status Verification**
-```bash
-# Daily morning checklist (recommended: 9:00 AM)
-# Execute as root or with appropriate sudo privileges
-
-# Step 1: Overall system health
-./tools/monitor.sh --morning-report
-
-# Expected morning report output:
-🌅 VaultWarden Morning Health Report - $(date +%Y-%m-%d %H:%M)
-
-Overnight Summary:
-✅ Service Uptime: 100% (last 12 hours)
-✅ Automated Backups: Completed at 1:00 AM (892KB)
-✅ Security Events: 0 incidents
-✅ Performance: Within normal parameters
-
-Current Status:
-✅ All containers healthy (4/4)
-✅ Database responsive (12ms avg)
-✅ SSL certificate valid (87 days remaining)
-✅ Memory usage: 892MB/4GB (22% - normal)
-✅ Disk usage: 15% (plenty of space)
-
-Overnight Automation:
-✅ Database backup: Successful (1:00 AM)
-✅ Log rotation: Completed (freed 23MB)
-✅ Health monitoring: 144/144 checks passed
-✅ Security monitoring: No threats detected
-
-Attention Required:
-   None - all systems operating normally
-
-Quick Actions Available:
-[1] View detailed logs: docker compose logs --tail=50
-[2] Check user activity: ./tools/monitor.sh --user-activity  
-[3] Security review: ./tools/monitor.sh --security-summary
-[4] Performance metrics: ./tools/monitor.sh --performance
-
-Status: 🟢 All systems operational
-```
-
-#### **User Activity Review**
-```bash
-# Step 2: Review user activity and system usage
-./tools/monitor.sh --user-activity-summary
-
-# User activity summary:
-👥 User Activity Summary (Last 24 Hours)
-
-Login Activity:
-📊 Total Logins: 23 sessions
-📊 Unique Users: 6/8 users active
-📊 Failed Attempts: 1 (4.3% - normal)
-📊 Geographic Distribution: Expected locations
-
-Recent Activity:
-✅ user1@company.com - 2h ago (mobile app)
-✅ user2@company.com - 4h ago (web browser)  
-✅ admin@company.com - 8h ago (admin panel)
-
-Inactive Users (>24h):
-⚠️  user7@company.com - Last login: 3 days ago
-⚠️  user8@company.com - Last login: 5 days ago
-
-Security Observations:
-✅ All login attempts from expected IP ranges
-✅ Two-factor authentication: 6/8 users (75%)
-✅ No suspicious access patterns detected
-✅ Session management: Normal duration patterns
-
-Action Items:
-   None required - normal usage patterns
-```
-
-#### **Alert and Notification Review**
-```bash
-# Step 3: Check for any alerts or notifications
-./tools/monitor.sh --check-alerts
-
-# Alert review:
-🔔 Alert and Notification Review
-
-System Alerts (Last 24h):
-✅ No critical alerts
-✅ No warning conditions
-✅ All automated systems functioning normally
-
-Email Notifications Sent:
-📧 Daily backup confirmation: Sent to admin@company.com
-📧 Weekly security summary: Scheduled for tomorrow
-
-Monitoring Status:
-✅ Automated monitoring: Active (every 5 minutes)
-✅ Email notifications: Configured and functional
-✅ Fail2ban notifications: Active
-✅ SSL expiration warnings: Active (30-day threshold)
-
-Notification Settings Review:
-✅ Admin email: admin@company.com (verified)
-✅ SMTP configuration: Functional
-✅ Alert thresholds: Appropriately configured
-✅ Escalation procedures: Documented
-
-Status: ✅ All notification systems operational
-```
-
-### **Evening Status Check (3 minutes)**
-
-#### **End-of-Day Summary**
-```bash
-# Evening status check (recommended: 5:00 PM)
-./tools/monitor.sh --evening-summary
-
-# Evening summary output:
-🌆 End-of-Day Status Summary - $(date +%Y-%m-%d %H:%M)
-
-Daily Performance Summary:
-📊 Uptime: 100% (24 hours)
-📊 Average Response Time: 89ms
-📊 Peak Response Time: 156ms (during backup)
-📊 Total Requests: 1,247
-📊 Error Rate: 0.08% (1 timeout - normal)
-
-User Activity Today:
-👥 Total Active Users: 7/8 (87.5%)
-👥 New Vault Items: 12 entries created
-👥 Vault Synchronizations: 156 sync operations
-👥 Admin Panel Access: 2 sessions
-
-Security Events:
-🛡️  Failed Login Attempts: 3 (normal level)
-🛡️  Blocked IPs: 0 (no active threats)
-🛡️  Fail2ban Activity: 1 SSH attempt blocked
-🛡️  Security Scans Detected: 2 (blocked by CloudFlare)
-
-System Health:
-✅ All services healthy throughout the day
-✅ Database performance: Excellent (11ms avg)
-✅ Memory usage peak: 1.1GB (stable)
-✅ Storage growth: +34KB (normal)
-
-Tomorrow's Scheduled Tasks:
-⏰ 1:00 AM - Automated database backup
-⏰ 3:00 AM - CloudFlare IP range update
-⏰ 4:00 AM - Log rotation and cleanup
-
-Status: 🟢 Day completed successfully - all systems stable
-```
-
-## 👥 **User Management Operations**
-
-### **New User Onboarding**
-
-#### **Create New User Account**
-```bash
-# Method 1: Via Admin Panel (Recommended)
-# 1. Access admin panel: https://vault.yourdomain.com/admin
-# 2. Navigate to Users → Create User
-# 3. Fill in user details
-# 4. Send invitation email
-
-# Method 2: Enable Self-Registration (Temporary)
-# Edit configuration to allow signups temporarily
-sudo jq '.SIGNUPS_ALLOWED = true' settings.json > temp.json
-sudo mv temp.json settings.json
-./startup.sh
-
-# User registers at: https://vault.yourdomain.com/register
-
-# Disable self-registration after user creation
-sudo jq '.SIGNUPS_ALLOWED = false' settings.json > temp.json  
-sudo mv temp.json settings.json
-./startup.sh
-
-# Method 3: Invitation System (Preferred for Teams)
-# Admin panel → Users → Invite User
-# User receives email with registration link
-```
-
-#### **User Onboarding Checklist**
-```bash
-New User Onboarding Process:
-
-Pre-Setup:
-- [ ] Verify user email address is valid
-- [ ] Confirm user should have access to VaultWarden
-- [ ] Determine appropriate organization membership (if applicable)
-- [ ] Prepare welcome documentation/training materials
-
-Account Creation:
-- [ ] Create user account via admin panel
-- [ ] Send invitation email (or provide registration instructions)
-- [ ] Verify user receives and can access invitation
-- [ ] Confirm successful account creation
-
-Security Setup:
-- [ ] Ensure user sets strong master password
-- [ ] Verify user enables two-factor authentication
-- [ ] Confirm user understands password recovery limitations
-- [ ] Provide security best practices documentation
-
-Client Setup:
-- [ ] Help user install Bitwarden mobile app
-- [ ] Configure mobile app with server URL: https://vault.yourdomain.com
-- [ ] Test mobile app login and synchronization
-- [ ] Install browser extension (if needed)
-- [ ] Test browser extension functionality
-
-Training and Documentation:
-- [ ] Provide VaultWarden user guide
-- [ ] Explain organization policies (password sharing, etc.)
-- [ ] Share emergency contact information
-- [ ] Document user account in admin records
-
-# Example user creation log entry:
-echo "$(date): Created user account for john.doe@company.com - Organization: Engineering" >> /var/log/user-management.log
-```
-
-### **User Account Management**
-
-#### **Disable User Account (Emergency)**
-```bash
-# Emergency user account disabling procedure
-# Use when immediate access revocation is required
-
-# Step 1: Access admin panel
-# Navigate to: https://vault.yourdomain.com/admin
-
-# Step 2: Locate user account
-# Users → Search for username/email
-
-# Step 3: Disable account
-# Click user → Disable User Account
-
-# Step 4: Verify deactivation
-# User should receive "Account disabled" error on next login attempt
-
-# Step 5: Document action
-echo "$(date): EMERGENCY - Disabled user account: $USERNAME - Reason: $REASON - Admin: $ADMIN_USER" >> /var/log/user-management.log
-
-# Step 6: Follow-up actions (as appropriate)
-# - Change shared organization passwords if user had access
-# - Review audit logs for user activity
-# - Notify relevant stakeholders
-# - Plan account reactivation or permanent deletion
-```
-
-#### **Reset User Master Password**
-```bash
-# Master password reset procedure
-# Note: Admin cannot reset master passwords directly (security feature)
-
-# Step 1: Inform user that admin cannot reset master password
-# This is a security feature of VaultWarden - only user knows master password
-
-# Step 2: Guide user through password reset process
-# User must delete account and recreate (data loss) OR
-# User must remember password with hints
-
-# Step 3: If user cannot remember password
-# Option A: Account deletion and recreation (loses all data)
-# Admin panel → Users → Select user → Delete Account
-
-# Option B: Provide password hint system
-# Help user think through possible password variations
-# Check if user has password written down securely
-
-# Step 4: Document incident
-echo "$(date): Password reset requested for $USERNAME - Resolution: $RESOLUTION" >> /var/log/user-management.log
-
-# Step 5: Prevention measures
-# Remind all users to:
-# - Use password manager for master password recovery
-# - Set up password hints that only they understand
-# - Consider using passphrases instead of complex passwords
-```
-
-## 🚨 **Incident Response Procedures**
-
-### **Service Outage Response**
-
-#### **Complete Service Outage**
-```bash
-# Incident Response: Complete VaultWarden Outage
-# Use this procedure when VaultWarden is completely inaccessible
-
-# Step 1: Immediate Assessment (2 minutes)
-START_TIME=$(date)
-echo "INCIDENT START: $START_TIME - Complete service outage detected" >> /var/log/incidents.log
-
-# Check basic connectivity
-curl -I https://vault.yourdomain.com || echo "Service unreachable"
-docker compose ps
-systemctl status docker
-
-# Step 2: Quick Recovery Attempt (3 minutes)
-# Attempt standard restart
-./startup.sh
-
-# If startup fails, check for obvious issues
-df -h                    # Disk space
-free -h                  # Memory availability  
-docker system df         # Docker storage
-
-# Step 3: Detailed Diagnostics (5 minutes)
-# Capture system state for analysis
-docker compose logs --tail=100 > /tmp/incident-logs-$(date +%Y%m%d_%H%M%S).log
-./tools/monitor.sh --emergency > /tmp/incident-diagnostics-$(date +%Y%m%d_%H%M%S).log
-
 # Check system resources
-echo "=== SYSTEM STATE ===" >> /tmp/incident-diagnostics-$(date +%Y%m%d_%H%M%S).log
-df -h >> /tmp/incident-diagnostics-$(date +%Y%m%d_%H%M%S).log
-free -h >> /tmp/incident-diagnostics-$(date +%Y%m%d_%H%M%S).log
-ps aux --sort=-%mem | head -10 >> /tmp/incident-diagnostics-$(date +%Y%m%d_%H%M%S).log
+df -h $PROJECT_STATE_DIR
+free -h
+uptime
 
-# Step 4: Emergency Backup (2 minutes)
-# Preserve current state before making changes
-./tools/create-full-backup.sh --emergency --incident-backup
+# Container resource usage
+docker stats --no-stream --format "table {{.Name}}	{{.CPUPerc}}	{{.MemUsage}}"
 
-# Step 5: Recovery Escalation (10 minutes)
-# Attempt progressive recovery steps
+# Log disk space review
+du -sh $PROJECT_STATE_DIR/logs/*/
 
-# Level 1: Container restart
-docker compose restart
+# Expected thresholds:
+# Disk usage: < 80% for data, < 70% for logs
+# Memory usage: < 85% per container
+# CPU load average: < 2.0 for single core systems
+```
 
-# Level 2: Clean container rebuild  
-if ! curl -I https://vault.yourdomain.com; then
-    docker compose down
-    docker system prune -f
-    ./startup.sh
+#### Service Status Verification
+```bash
+# Verify all services are running
+docker compose ps
+
+# Check service health endpoints
+curl -I https://your-domain.com  # Should return 200
+curl -I https://your-domain.com/alive  # VaultWarden health
+
+# Verify SSL certificate status
+echo | openssl s_client -connect your-domain.com:443 2>/dev/null |   openssl x509 -noout -dates | grep "notAfter"
+```
+
+### Evening Operations Review (Daily - 18:00)
+
+#### Backup Verification
+```bash
+# Verify daily backup completion
+ls -la $PROJECT_STATE_DIR/backups/daily/ | tail -5
+
+# Check backup integrity (weekly rotation)
+./tools/restore.sh --verify   $(ls -t $PROJECT_STATE_DIR/backups/daily/*.enc | head -1)
+
+# Review backup log for any issues
+grep -E "(ERROR|WARN)" /var/log/cron.log | grep backup | tail -10
+```
+
+#### Security Review
+```bash
+# Check fail2ban activity
+sudo fail2ban-client status
+sudo fail2ban-client get vaultwarden-auth stats
+
+# Review authentication failures
+tail -50 $PROJECT_STATE_DIR/logs/vaultwarden/vaultwarden.log |   grep -E "(Invalid|failed|denied)" | tail -10
+
+# Check for unusual access patterns
+awk '{print $1}' $PROJECT_STATE_DIR/logs/caddy/access.log |   sort | uniq -c | sort -nr | head -10
+```
+
+## Weekly Operations Procedures
+
+### Weekly System Review (Monday - 09:00)
+
+#### Performance Analysis
+```bash
+# Database performance review
+./tools/sqlite-maintenance.sh --stats
+
+# System performance trends
+# Generate weekly performance report
+cat > /tmp/weekly-performance.txt << EOF
+Weekly Performance Report - $(date)
+================================
+
+System Resources:
+$(df -h $PROJECT_STATE_DIR | tail -n +2)
+$(free -h | grep Mem)
+Load Average: $(uptime | awk -F'load average:' '{print $2}')
+
+Container Resource Usage:
+$(docker stats --no-stream --format "{{.Name}}: CPU={{.CPUPerc}} MEM={{.MemUsage}}")
+
+Database Statistics:
+Database Size: $(du -sh $PROJECT_STATE_DIR/data/bwdata/db.sqlite3 | cut -f1)
+User Count: $(echo "SELECT COUNT(*) FROM users;" | sqlite3 $PROJECT_STATE_DIR/data/bwdata/db.sqlite3)
+Vault Items: $(echo "SELECT COUNT(*) FROM cipher;" | sqlite3 $PROJECT_STATE_DIR/data/bwdata/db.sqlite3)
+
+Backup Status:
+Latest Backup: $(ls -t $PROJECT_STATE_DIR/backups/daily/*.enc | head -1 | xargs basename)
+Backup Size: $(ls -lh $PROJECT_STATE_DIR/backups/daily/*.enc | head -1 | awk '{print $5}')
+
+Security Events (7 days):
+Failed Logins: $(grep -c "Invalid password" $PROJECT_STATE_DIR/logs/vaultwarden/vaultwarden.log)
+Blocked IPs: $(sudo fail2ban-client status vaultwarden-auth | grep "Currently banned" | awk '{print $NF}')
+EOF
+
+# Email performance report if SMTP configured
+if command -v mail >/dev/null 2>&1; then
+    mail -s "Weekly VaultWarden Performance Report" admin@your-domain.com < /tmp/weekly-performance.txt
 fi
 
-# Level 3: Restore from recent backup
-if ! curl -I https://vault.yourdomain.com; then
-    echo "Escalating to backup restoration" >> /var/log/incidents.log
-    ./tools/restore.sh --list-recent
-    ./tools/restore.sh /var/lib/*/backups/full/latest.tar.gz
-fi
+rm /tmp/weekly-performance.txt
+```
 
-# Step 6: Communication (During recovery)
-# Prepare status update for users
-SERVICE_STATUS="investigating"  # investigating/identified/monitoring/resolved
-ESTIMATED_RESOLUTION="15 minutes"
-USER_IMPACT="Complete service unavailability"
+#### Configuration Drift Detection
+```bash
+# Check for configuration changes
+cd $PROJECT_STATE_DIR/..
+git status
 
-# Step 7: Resolution Verification (3 minutes)
-if curl -I https://vault.yourdomain.com; then
-    RESOLUTION_TIME=$(date)
-    echo "INCIDENT RESOLVED: $RESOLUTION_TIME" >> /var/log/incidents.log
-    
-    # Verify full functionality
-    ./tools/monitor.sh --post-incident-check
-    
-    # Test user login (use test account)
-    echo "Service restoration verified at $RESOLUTION_TIME"
-else
-    echo "ESCALATION REQUIRED: Service still unavailable after standard recovery procedures" >> /var/log/incidents.log
-    # Escalate to secondary admin or vendor support
+# Review any uncommitted changes
+git diff HEAD
+
+# Check for security updates
+sudo apt list --upgradable | grep -E "(security|docker)"
+
+# Verify cron jobs are still configured
+crontab -l | grep -E "(backup|monitor|maintenance)"
+```
+
+### Weekly Maintenance Tasks (Saturday - 02:00)
+
+#### Database Optimization
+```bash
+# Run comprehensive database maintenance
+./tools/sqlite-maintenance.sh --full
+
+# Check database growth trends
+DB_SIZE_MB=$(du -m $PROJECT_STATE_DIR/data/bwdata/db.sqlite3 | cut -f1)
+echo "$(date): Database size: ${DB_SIZE_MB}MB" >> /var/log/database-growth.log
+
+# Analyze growth rate (if log exists)
+if [ -f /var/log/database-growth.log ]; then
+    tail -4 /var/log/database-growth.log |       awk '{print "Date:", $1, $2, "Size:", $5}' |       column -t
 fi
 ```
 
-#### **Partial Service Degradation**
+#### Log Cleanup and Rotation
 ```bash
-# Incident Response: Service Performance Issues
-# Use when service is accessible but performing poorly
+# Manual log cleanup for large deployments
+find $PROJECT_STATE_DIR/logs/ -name "*.log" -size +50M -exec ls -lh {} \;
 
-# Step 1: Performance Assessment
-./tools/monitor.sh --performance-incident
+# Compress old logs if needed
+find $PROJECT_STATE_DIR/logs/ -name "*.log" -mtime +7 -exec gzip {} \;
 
-# Performance incident analysis:
-⚠️  Performance Incident Analysis
+# Clean up compressed logs older than 30 days
+find $PROJECT_STATE_DIR/logs/ -name "*.gz" -mtime +30 -delete
 
-Current Performance Metrics:
-📊 Average Response Time: 2,456ms (baseline: 89ms)
-📊 Database Query Time: 89ms (baseline: 11ms)  
-📊 Error Rate: 5.2% (baseline: <0.1%)
-📊 Memory Usage: 3.7GB/4GB (93% - high)
-
-Identified Issues:
-🔴 High response times (27x baseline)
-🔴 Database performance degraded (8x baseline)
-🔴 Memory pressure detected
-🟡 CPU usage elevated but manageable
-
-# Step 2: Immediate Mitigation
-# Clear memory pressure
-sync && echo 1 > /proc/sys/vm/drop_caches
-
-# Check for resource-intensive processes
-ps aux --sort=-%mem | head -5
-ps aux --sort=-%cpu | head -5
-
-# Step 3: Database Performance Check
-./tools/sqlite-maintenance.sh --emergency-check
-
-# Step 4: Log Analysis for Root Cause
-tail -1000 /var/lib/*/logs/vaultwarden/vaultwarden.log | grep -E "(ERROR|timeout|slow)"
-tail -1000 /var/lib/*/logs/caddy/access.log | jq 'select(.duration > 1000)'
-
-# Step 5: Progressive Optimization
-# Optimize database if safe to do so
-./tools/sqlite-maintenance.sh --quick-optimize
-
-# Restart services if degradation continues
-if [[ $(./tools/monitor.sh --response-time-check) -gt 1000 ]]; then
-    docker compose restart vaultwarden
-fi
-
-# Step 6: Monitor Recovery
-./tools/monitor.sh --recovery-monitoring --interval 30 --duration 300
+# Verify log rotation is working
+ls -la $PROJECT_STATE_DIR/logs/*/
 ```
 
-### **Security Incident Response**
+## Incident Response Procedures
 
-#### **Suspected Breach or Unauthorized Access**
+### Severity Classification
+
+#### Severity 1 (Critical) - Complete Service Outage
+**Response Time**: Immediate (< 5 minutes)
+**Escalation**: Automatic to all team members
+
+**Indicators**:
+- VaultWarden web interface completely inaccessible
+- All user authentication failing
+- Database corruption preventing service start
+- Security breach confirmed
+
+#### Severity 2 (High) - Degraded Service
+**Response Time**: 15 minutes
+**Escalation**: Primary and secondary operators
+
+**Indicators**:
+- Slow response times (> 5 seconds)
+- Intermittent authentication failures
+- Some features unavailable
+- SSL certificate warnings
+
+#### Severity 3 (Medium) - Minor Issues  
+**Response Time**: 2 hours
+**Escalation**: Primary operator
+
+**Indicators**:
+- Performance degradation
+- Non-critical feature failures
+- Backup warnings
+- Monitoring alerts
+
+### Incident Response Workflow
+
+#### Initial Response (0-5 minutes)
 ```bash
-# Security Incident Response: Suspected Unauthorized Access
-# Use when suspicious activity is detected
+# Step 1: Immediate assessment
+echo "$(date): INCIDENT RESPONSE INITIATED" >> /var/log/incidents.log
 
-# Step 1: Immediate Assessment and Containment
-INCIDENT_ID="SEC-$(date +%Y%m%d_%H%M%S)"
-echo "SECURITY INCIDENT $INCIDENT_ID: Suspected unauthorized access detected" >> /var/log/security-incidents.log
+# Step 2: Quick health check
+./tools/check-health.sh --summary
 
-# Check current active sessions and recent activity
-./tools/monitor.sh --security-incident-analysis
+# Step 3: Service status verification
+docker compose ps
 
-# Step 2: Preserve Evidence
-# Create forensic backup before making changes
-./tools/create-full-backup.sh --forensic --incident-id "$INCIDENT_ID"
+# Step 4: Log snapshot capture
+mkdir -p /tmp/incident-$(date +%Y%m%d-%H%M)
+INCIDENT_DIR="/tmp/incident-$(date +%Y%m%d-%H%M)"
+docker compose logs --tail=100 > $INCIDENT_DIR/service-logs.txt
+cp $PROJECT_STATE_DIR/logs/vaultwarden/*.log $INCIDENT_DIR/ 2>/dev/null || true
 
-# Preserve current logs
-cp -r /var/lib/*/logs /tmp/forensic-logs-$INCIDENT_ID
-chmod -R 600 /tmp/forensic-logs-$INCIDENT_ID
+# Step 5: Resource check
+df -h > $INCIDENT_DIR/disk-usage.txt
+free -h > $INCIDENT_DIR/memory-usage.txt
+ps aux > $INCIDENT_DIR/processes.txt
+```
 
-# Step 3: Immediate Containment (if breach confirmed)
-# Block suspicious IPs immediately
-SUSPICIOUS_IPS=("1.2.3.4" "5.6.7.8")  # Replace with actual IPs
-for ip in "${SUSPICIOUS_IPS[@]}"; do
-    sudo fail2ban-client set vaultwarden banip "$ip"
-    echo "$INCIDENT_ID: Blocked suspicious IP: $ip" >> /var/log/security-incidents.log
+#### Detailed Investigation (5-15 minutes)
+```bash
+# Container-specific diagnostics
+for service in vaultwarden caddy fail2ban; do
+    echo "=== $service Service Analysis ===" >> $INCIDENT_DIR/diagnostics.txt
+    docker compose logs --tail=50 $service >> $INCIDENT_DIR/diagnostics.txt
+
+    # Service-specific health checks
+    case $service in
+        vaultwarden)
+            curl -I http://localhost:8080/alive >> $INCIDENT_DIR/diagnostics.txt 2>&1
+            ;;
+        caddy)
+            curl -I http://localhost:2019/metrics >> $INCIDENT_DIR/diagnostics.txt 2>&1
+            ;;
+    esac
 done
 
-# Step 4: Enhanced Monitoring
-# Increase monitoring frequency temporarily
-./tools/monitor.sh --security-enhanced-monitoring --duration 3600 &
-
-# Step 5: User Account Review
-# Check for compromised accounts
-./tools/security-audit.sh --incident-mode --check-compromised-accounts
-
-# Step 6: System Integrity Check
-# Verify system files haven't been modified
-./tools/monitor.sh --integrity-check
-find /opt/VaultWarden-OCI-Minimal -name "*.sh" -exec ls -la {} \; | tee /tmp/file-integrity-$INCIDENT_ID.log
-
-# Step 7: Communication Preparation
-# Prepare incident communication
-INCIDENT_SUMMARY="Suspicious access patterns detected. Investigation in progress."
-IMPACT_ASSESSMENT="Precautionary measures activated. User access may be monitored."
-ACTIONS_TAKEN="Enhanced monitoring, suspicious IPs blocked, forensic evidence preserved."
-
-# Step 8: Resolution and Follow-up
-# After investigation:
-# - Force password reset for affected users (if any)
-# - Review and strengthen security measures
-# - Update incident response procedures
-# - Conduct post-incident review
+# Database diagnostics
+if [ -f $PROJECT_STATE_DIR/data/bwdata/db.sqlite3 ]; then
+    sqlite3 $PROJECT_STATE_DIR/data/bwdata/db.sqlite3 "PRAGMA integrity_check;" > $INCIDENT_DIR/db-integrity.txt
+    sqlite3 $PROJECT_STATE_DIR/data/bwdata/db.sqlite3 "PRAGMA table_info(users);" > $INCIDENT_DIR/db-schema.txt
+fi
 ```
 
-## 🔧 **Change Management Operations**
-
-### **Configuration Changes**
-
-#### **Safe Configuration Update Procedure**
+#### Resolution Actions (15+ minutes)
 ```bash
-# Configuration Change Procedure
-# Use for any changes to settings.json or system configuration
+# Standard resolution procedures based on incident type
 
-# Step 1: Change Request Documentation
-CHANGE_ID="CHG-$(date +%Y%m%d_%H%M%S)"
-CHANGE_REQUESTOR="admin@company.com"
-CHANGE_DESCRIPTION="Update SMTP configuration for new mail server"
-CHANGE_IMPACT="Low - affects email notifications only"
-CHANGE_ROLLBACK="Revert to previous SMTP settings"
+# Service restart procedure
+attempt_service_restart() {
+    echo "$(date): Attempting service restart" >> /var/log/incidents.log
+    ./startup.sh
+    sleep 30
+    ./tools/check-health.sh
+}
 
-echo "CHANGE REQUEST $CHANGE_ID: $CHANGE_DESCRIPTION" >> /var/log/changes.log
+# Database recovery procedure
+attempt_database_recovery() {
+    echo "$(date): Attempting database recovery" >> /var/log/incidents.log
+    ./tools/sqlite-maintenance.sh --check
+    if [ $? -ne 0 ]; then
+        latest_backup=$(ls -t $PROJECT_STATE_DIR/backups/daily/*.enc | head -1)
+        ./tools/restore.sh --database-only "$latest_backup"
+    fi
+}
 
-# Step 2: Pre-Change Backup
-./tools/backup-current-config.sh --change-id "$CHANGE_ID"
-
-# Step 3: Configuration Testing (Staging)
-# Test configuration syntax
-cp settings.json settings.json.new
-# Edit settings.json.new with proposed changes
-nano settings.json.new
-
-# Validate JSON syntax
-jq . settings.json.new
-
-# Step 4: Change Implementation Window
-# Implement during maintenance window (if applicable)
-MAINTENANCE_START=$(date)
-echo "$CHANGE_ID: Maintenance window started at $MAINTENANCE_START" >> /var/log/changes.log
-
-# Apply configuration changes
-sudo cp settings.json.new settings.json
-sudo chmod 600 settings.json
-
-# Step 5: Configuration Validation
-./startup.sh --validate
-
-# Step 6: Service Restart and Testing
-./startup.sh
-
-# Verify services are healthy
-./tools/monitor.sh --post-change-validation
-
-# Step 7: Functional Testing
-# Test affected functionality (e.g., email notifications)
-./tools/monitor.sh --test-email
-
-# Step 8: Change Documentation
-MAINTENANCE_END=$(date)
-echo "$CHANGE_ID: Change completed successfully at $MAINTENANCE_END" >> /var/log/changes.log
-
-# Clean up temporary files
-rm settings.json.new
+# Configuration recovery procedure
+attempt_config_recovery() {
+    echo "$(date): Attempting configuration recovery" >> /var/log/incidents.log
+    git checkout HEAD -- docker-compose.yml
+    ./startup.sh --validate
+}
 ```
 
-#### **Emergency Configuration Rollback**
+## Maintenance Procedures
+
+### Scheduled Maintenance Windows
+
+#### Monthly Maintenance (First Sunday, 02:00-06:00)
 ```bash
-# Emergency rollback procedure
-# Use when configuration change causes service issues
+# Monthly maintenance checklist
+cat > /tmp/monthly-maintenance-$(date +%Y%m).txt << EOF
+Monthly Maintenance Checklist - $(date)
+======================================
 
-# Step 1: Immediate Assessment
-ROLLBACK_ID="RBK-$(date +%Y%m%d_%H%M%S)"
-echo "EMERGENCY ROLLBACK $ROLLBACK_ID: Configuration rollback initiated" >> /var/log/changes.log
+Pre-maintenance:
+[ ] Maintenance window notification sent to users
+[ ] Full system backup created
+[ ] Backup integrity verified
+[ ] Rollback plan documented
 
-# Step 2: Stop Services (if still running)
-docker compose down
+System Updates:
+[ ] Operating system security updates applied
+[ ] Docker and Docker Compose updated
+[ ] Container images updated (via Watchtower or manual)
 
-# Step 3: Restore Previous Configuration
-# Find most recent configuration backup
-BACKUP_FILE=$(ls -t /var/lib/*/config-backups/settings_*.json | head -1)
-echo "Restoring configuration from: $BACKUP_FILE" >> /var/log/changes.log
+Database Maintenance:
+[ ] Database optimization completed
+[ ] Integrity check performed
+[ ] Growth analysis completed
+[ ] Index optimization reviewed
 
-sudo cp "$BACKUP_FILE" settings.json
-sudo chmod 600 settings.json
+Security Review:
+[ ] SSL certificate status verified
+[ ] Security patches applied
+[ ] Firewall rules reviewed
+[ ] Access logs analyzed
 
-# Step 4: Validate Restored Configuration
-jq . settings.json
-./startup.sh --validate
+Configuration Review:
+[ ] Configuration drift checked
+[ ] Backup retention policies verified
+[ ] Monitoring thresholds reviewed
+[ ] Documentation updated
 
-# Step 5: Restart Services
-./startup.sh
+Performance Review:
+[ ] Resource utilization analyzed
+[ ] Performance benchmarks recorded
+[ ] Capacity planning updated
 
-# Step 6: Verify Rollback Success
-./tools/monitor.sh --post-rollback-check
+Post-maintenance:
+[ ] All services verified operational
+[ ] User acceptance testing completed
+[ ] Maintenance completion notification sent
+[ ] Incident log updated
 
-ROLLBACK_END=$(date)
-echo "ROLLBACK $ROLLBACK_ID: Completed at $ROLLBACK_END" >> /var/log/changes.log
+EOF
+
+# Execute maintenance tasks
+echo "Starting monthly maintenance..." >> /var/log/maintenance.log
 ```
 
-### **System Updates**
-
-#### **Container Update Procedure**
+#### Emergency Maintenance Procedures
 ```bash
-# Container Update Procedure
-# Use for updating VaultWarden and related containers
+# Emergency maintenance workflow
+emergency_maintenance() {
+    local reason="$1"
+    local estimated_duration="$2"
 
-# Step 1: Update Preparation
-UPDATE_ID="UPD-$(date +%Y%m%d_%H%M%S)"
-echo "UPDATE $UPDATE_ID: Container update procedure started" >> /var/log/updates.log
+    echo "$(date): EMERGENCY MAINTENANCE - $reason" >> /var/log/incidents.log
 
-# Check current versions
-docker compose images > /tmp/versions-before-$UPDATE_ID.txt
+    # 1. Immediate notification
+    cat > /tmp/emergency-notice.txt << EOF
+EMERGENCY MAINTENANCE NOTIFICATION
 
-# Step 2: Pre-Update Backup
-./tools/create-full-backup.sh --pre-update --update-id "$UPDATE_ID"
+Service: VaultWarden Password Manager
+Start Time: $(date)
+Estimated Duration: $estimated_duration
+Reason: $reason
 
-# Step 3: Download New Images
-docker compose pull
+Impact: Service will be temporarily unavailable during maintenance.
+All data remains secure and will be restored upon completion.
 
-# Check what will be updated
-docker compose images > /tmp/versions-after-pull-$UPDATE_ID.txt
-diff /tmp/versions-before-$UPDATE_ID.txt /tmp/versions-after-pull-$UPDATE_ID.txt
+Status updates will be provided every 30 minutes.
+EOF
 
-# Step 4: Maintenance Window Communication
-# Notify users of upcoming brief maintenance (if applicable)
-MAINTENANCE_START=$(date)
+    # Send notification if email configured
+    if command -v mail >/dev/null 2>&1; then
+        mail -s "EMERGENCY MAINTENANCE - VaultWarden" admin@your-domain.com < /tmp/emergency-notice.txt
+    fi
 
-# Step 5: Service Update
-docker compose down
-docker compose up -d
+    # 2. Create maintenance backup
+    ./tools/create-full-backup.sh --output-dir /tmp/emergency-maintenance-backup/
 
-# Step 6: Post-Update Validation
-./tools/monitor.sh --post-update-validation
+    # 3. Execute maintenance procedures
+    # (Specific procedures depend on maintenance type)
 
-# Verify all services are healthy
-docker compose ps
-./startup.sh --validate
+    # 4. Verification and restoration
+    ./tools/check-health.sh --verbose
 
-# Step 7: Functional Testing
-# Test critical functions
-curl -I https://vault.yourdomain.com
-./tools/monitor.sh --functionality-test
-
-# Step 8: Update Documentation
-MAINTENANCE_END=$(date)  
-echo "UPDATE $UPDATE_ID: Completed successfully at $MAINTENANCE_END" >> /var/log/updates.log
-
-# Record new versions
-docker compose images > /var/log/versions-current.txt
+    # 5. Completion notification
+    echo "Emergency maintenance completed at $(date)" |       mail -s "MAINTENANCE COMPLETE - VaultWarden" admin@your-domain.com
+}
 ```
 
-## 📊 **Performance Management Operations**
+### Container Update Procedures
 
-### **Performance Monitoring and Optimization**
-
-#### **Performance Baseline Establishment**
+#### Manual Container Updates
 ```bash
-# Establish performance baselines for monitoring
-# Run during normal operating conditions
+# Controlled container update procedure
+update_containers() {
+    echo "$(date): Starting container update procedure" >> /var/log/updates.log
 
-# Step 1: Comprehensive Performance Analysis
-./tools/monitor.sh --establish-baseline
+    # 1. Create pre-update backup
+    ./tools/create-full-backup.sh --output-dir /tmp/pre-update-backup/
 
-# Baseline establishment process:
-📊 Performance Baseline Establishment
+    # 2. Stop services gracefully
+    docker compose down
 
-Current System State:
-✅ System load: Normal operating conditions
-✅ User activity: Typical usage patterns
-✅ No maintenance operations running
-✅ All services healthy and stable
+    # 3. Pull latest images
+    docker compose pull
 
-Performance Measurements (30-minute sampling):
-📈 Response Time:
-   - Average: 89ms
-   - 95th percentile: 156ms
-   - 99th percentile: 245ms
-   - Max observed: 312ms
+    # 4. Start services
+    ./startup.sh
 
-📈 Database Performance:
-   - Query time average: 11ms
-   - Query time 95th percentile: 23ms
-   - Database size: 2.3MB
-   - Index efficiency: 99.1%
-
-📈 Resource Utilization:
-   - Memory usage: 892MB (22% of 4GB)
-   - CPU usage: 2.3% average, 8.7% peak
-   - Disk I/O: <5% utilization
-   - Network I/O: 15MB in, 890KB out
-
-📈 Throughput:
-   - Requests per minute: 24 avg
-   - Concurrent users: 3-8 range
-   - Data sync operations: 12 per hour
-
-# Baseline saved to: /var/lib/*/monitoring/baseline-YYYYMMDD.json
+    # 5. Verify update success
+    if ./tools/check-health.sh; then
+        echo "$(date): Container update successful" >> /var/log/updates.log
+    else
+        echo "$(date): Container update failed - initiating rollback" >> /var/log/updates.log
+        # Rollback procedure
+        docker compose down
+        docker tag $(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "(vaultwarden|caddy)" | head -1) backup
+        ./startup.sh
+    fi
+}
 ```
 
-#### **Performance Issue Investigation**
+## Monitoring and Alerting Operations
+
+### Alert Response Procedures
+
+#### High CPU Usage Alert
 ```bash
-# Performance issue troubleshooting workflow
-# Use when performance degradation is reported
+# CPU usage investigation and resolution
+investigate_high_cpu() {
+    echo "$(date): High CPU usage alert triggered" >> /var/log/performance.log
 
-# Step 1: Current Performance Assessment
-./tools/monitor.sh --performance-investigation
+    # 1. Identify resource-heavy processes
+    docker stats --no-stream --format "table {{.Name}}	{{.CPUPerc}}" |       sort -k2 -nr > /tmp/cpu-usage.txt
 
-# Performance investigation results:
-🔍 Performance Investigation Analysis
+    # 2. Check for specific issues
+    # Database performance
+    ./tools/sqlite-maintenance.sh --stats
 
-Performance Comparison (Current vs Baseline):
-📊 Response Time: 234ms (baseline: 89ms) - 2.6x slower
-📊 Database Queries: 45ms (baseline: 11ms) - 4.1x slower  
-📊 Memory Usage: 2.1GB (baseline: 892MB) - 2.4x higher
-📊 CPU Usage: 12.3% (baseline: 2.3%) - 5.3x higher
+    # Container resource limits
+    docker compose config | grep -A2 -B2 "cpus\|memory"
 
-# Step 2: Resource Analysis
-top -bn1 | head -20
-iostat -x 1 5
-netstat -tuln | wc -l
-
-# Step 3: Database Performance Analysis
-./tools/sqlite-maintenance.sh --performance-analysis
-
-# Step 4: Log Analysis for Bottlenecks
-# Look for slow queries, errors, or unusual patterns
-grep -E "(slow|timeout|error)" /var/lib/*/logs/vaultwarden/vaultwarden.log | tail -20
-
-# Step 5: Container Resource Check
-docker stats --no-stream
-docker system df
-
-# Step 6: Optimization Recommendations
-./tools/monitor.sh --optimization-recommendations
-
-# Recommended optimizations based on analysis:
-💡 Performance Optimization Recommendations
-
-Immediate Actions:
-1. Database optimization needed (fragmentation detected)
-2. Memory pressure - consider container restart
-3. Old log files consuming disk I/O - rotate logs
-
-Medium-term Actions:
-1. Monitor if user growth requires resource scaling
-2. Consider database indexing optimization
-3. Review backup timing to avoid peak usage
-
-Long-term Considerations:
-1. Plan for storage expansion (growth trend analysis)
-2. Evaluate server specifications for user growth
-3. Consider load balancing if usage continues growing
+    # 3. Mitigation actions
+    if [ "$(docker stats --no-stream vaultwarden --format '{{.CPUPerc}}' | sed 's/%//')" -gt 80 ]; then
+        echo "VaultWarden CPU usage > 80% - investigating database load"
+        # Restart VaultWarden to clear any resource leaks
+        docker compose restart vaultwarden
+    fi
+}
 ```
 
-## 📋 **Compliance and Audit Operations**
-
-### **Audit Log Management**
-
-#### **Generate Compliance Report**
+#### Disk Space Alert
 ```bash
-# Generate comprehensive compliance report
-# Use for regular compliance reviews or audits
+# Disk space management procedure
+handle_disk_space_alert() {
+    local usage_percent=$(df $PROJECT_STATE_DIR | tail -1 | awk '{print $5}' | sed 's/%//')
 
-# Step 1: Comprehensive Audit Data Collection
-AUDIT_ID="AUD-$(date +%Y%m%d_%H%M%S)"
-AUDIT_PERIOD_START="2024-09-01"  # Adjust as needed
-AUDIT_PERIOD_END="2024-10-01"
+    echo "$(date): Disk space alert - ${usage_percent}% usage" >> /var/log/disk-space.log
 
-./tools/compliance-report.sh --period "$AUDIT_PERIOD_START" "$AUDIT_PERIOD_END" --audit-id "$AUDIT_ID"
+    if [ "$usage_percent" -gt 90 ]; then
+        # Critical disk space - immediate action required
+        echo "CRITICAL: Disk space > 90%" >> /var/log/disk-space.log
 
-# Compliance report generation:
-📋 Compliance Report Generation
+        # 1. Emergency log cleanup
+        find $PROJECT_STATE_DIR/logs/ -name "*.log" -mtime +7 -exec gzip {} \;
+        find $PROJECT_STATE_DIR/logs/ -name "*.gz" -mtime +14 -delete
 
-Report Parameters:
-- Report ID: AUD-20241014_173025
-- Period: 2024-09-01 to 2024-10-01
-- System: VaultWarden-OCI-Minimal
-- Administrator: admin@company.com
+        # 2. Old backup cleanup (keep 14 days minimum)
+        find $PROJECT_STATE_DIR/backups/daily/ -name "*.enc" -mtime +21 -delete
 
-Access Control Compliance:
-✅ User account management: All changes logged
-✅ Administrative access: Proper authentication required
-✅ Session management: Secure timeouts enforced
-✅ Password policies: Enforced (12 char minimum, complexity)
+        # 3. Docker system cleanup
+        docker system prune -f
 
-Data Protection Compliance:
-✅ Encryption at rest: Client-side by VaultWarden
-✅ Encryption in transit: TLS 1.3 enforced
-✅ Backup encryption: AES-256-GCM for all backups
-✅ Data retention: Policies documented and enforced
-
-System Security Compliance:
-✅ Security patching: Up to date (last update: 7 days ago)
-✅ Vulnerability management: Regular container updates
-✅ Intrusion detection: fail2ban active with logging
-✅ Firewall configuration: Minimal attack surface
-
-Audit Logging Compliance:
-✅ Authentication events: All logins/failures logged
-✅ Administrative actions: All changes documented
-✅ System events: Comprehensive logging active
-✅ Log retention: 30+ days (configurable)
-
-# Report saved to: /var/lib/*/compliance/audit-report-AUD-20241014_173025.pdf
+        # 4. Report space recovered
+        new_usage=$(df $PROJECT_STATE_DIR | tail -1 | awk '{print $5}')
+        echo "Space cleanup completed - usage now: $new_usage" >> /var/log/disk-space.log
+    fi
+}
 ```
 
-#### **Access Review Procedures**
+#### SSL Certificate Expiration Alert
 ```bash
-# Quarterly access review procedure
-# Verify all user access is appropriate and authorized
+# SSL certificate renewal procedure
+handle_ssl_expiration() {
+    local days_until_expiry=$1
 
-# Step 1: Generate User Access Report
-./tools/access-review.sh --quarterly
+    echo "$(date): SSL certificate expires in $days_until_expiry days" >> /var/log/ssl.log
 
-# Access review report:
-👥 Quarterly Access Review Report
+    if [ "$days_until_expiry" -le 7 ]; then
+        # Force certificate renewal
+        echo "Forcing SSL certificate renewal" >> /var/log/ssl.log
+        docker compose exec caddy caddy reload
 
-User Account Status (as of $(date +%Y-%m-%d)):
-📊 Total Active Accounts: 8
-📊 Disabled Accounts: 0  
-📊 Admin Accounts: 1 (appropriate)
+        # Wait and verify renewal
+        sleep 60
+        new_expiry=$(echo | openssl s_client -connect your-domain.com:443 2>/dev/null |           openssl x509 -noout -enddate | cut -d= -f2)
 
-User Activity Analysis (Last 90 days):
-✅ user1@company.com - Active (last login: 2d ago) - Engineering Team
-✅ user2@company.com - Active (last login: 1d ago) - Engineering Team  
-✅ user3@company.com - Active (last login: 5d ago) - Marketing Team
-⚠️  user4@company.com - Inactive (last login: 45d ago) - Former Employee?
-✅ user5@company.com - Active (last login: 1d ago) - Sales Team
-✅ user6@company.com - Active (last login: 3d ago) - Management
-✅ user7@company.com - Active (last login: 7d ago) - IT Team
-✅ admin@company.com - Active (last login: 1d ago) - Administrator
+        echo "SSL certificate renewed - new expiry: $new_expiry" >> /var/log/ssl.log
 
-Organization Membership Review:
-✅ Engineering Org: 2 members (appropriate)
-✅ Company-wide Org: 8 members (all employees)
-
-Access Recommendations:
-1. Review user4@company.com - possible termination needed
-2. All other access appears appropriate
-3. Two-factor authentication: 6/8 users (75% - good)
-
-# Step 2: Access Review Actions
-# Remove or disable inappropriate access
-# Document all access changes
-# Update user records as needed
+        # Send confirmation
+        echo "SSL certificate successfully renewed. New expiry: $new_expiry" |           mail -s "SSL Certificate Renewed" admin@your-domain.com
+    fi
+}
 ```
 
-This comprehensive operations runbook provides detailed procedures for managing VaultWarden-OCI-Minimal in production environments, ensuring consistent operations and effective incident response."""
+## Backup and Recovery Operations
+
+### Backup Validation Procedures
+
+#### Weekly Backup Testing
+```bash
+# Weekly backup integrity testing
+test_backup_integrity() {
+    echo "$(date): Starting weekly backup integrity test" >> /var/log/backup-tests.log
+
+    # Select random backup from last 7 days
+    random_backup=$(find $PROJECT_STATE_DIR/backups/daily/ -name "*.enc" -mtime -7 | shuf -n 1)
+
+    if [ -n "$random_backup" ]; then
+        echo "Testing backup: $(basename $random_backup)" >> /var/log/backup-tests.log
+
+        if ./tools/restore.sh --verify "$random_backup"; then
+            echo "✅ Backup integrity test PASSED" >> /var/log/backup-tests.log
+        else
+            echo "❌ Backup integrity test FAILED" >> /var/log/backup-tests.log
+            # Send alert
+            echo "Backup integrity test failed for: $(basename $random_backup)" |               mail -s "BACKUP INTEGRITY ALERT" admin@your-domain.com
+        fi
+    else
+        echo "❌ No recent backups found for testing" >> /var/log/backup-tests.log
+    fi
+}
+```
+
+### Emergency Recovery Operations
+
+#### Point-in-Time Recovery
+```bash
+# Point-in-time recovery procedure
+perform_point_in_time_recovery() {
+    local target_date="$1"  # Format: YYYY-MM-DD
+    local reason="$2"
+
+    echo "$(date): POINT-IN-TIME RECOVERY - Target: $target_date, Reason: $reason" >> /var/log/recovery.log
+
+    # 1. Stop current services
+    docker compose down
+
+    # 2. Backup current state
+    ./tools/create-full-backup.sh --output-dir /tmp/pre-recovery-backup/
+
+    # 3. Find appropriate backup
+    backup_file=$(find $PROJECT_STATE_DIR/backups/ -name "*${target_date}*.enc" | head -1)
+
+    if [ -z "$backup_file" ]; then
+        echo "ERROR: No backup found for date $target_date" >> /var/log/recovery.log
+        # Try closest backup
+        backup_file=$(find $PROJECT_STATE_DIR/backups/ -name "*.enc" -newermt "$target_date" | head -1)
+    fi
+
+    # 4. Perform recovery
+    if [ -n "$backup_file" ]; then
+        echo "Recovering from backup: $(basename $backup_file)" >> /var/log/recovery.log
+        ./tools/restore.sh "$backup_file"
+
+        # 5. Verify recovery
+        if ./startup.sh && ./tools/check-health.sh; then
+            echo "✅ Point-in-time recovery successful" >> /var/log/recovery.log
+        else
+            echo "❌ Point-in-time recovery failed" >> /var/log/recovery.log
+        fi
+    else
+        echo "❌ No suitable backup found for recovery" >> /var/log/recovery.log
+    fi
+}
+```
+
+## Performance Optimization Operations
+
+### Performance Tuning Procedures
+
+#### Database Performance Optimization
+```bash
+# Database performance tuning
+optimize_database_performance() {
+    echo "$(date): Starting database performance optimization" >> /var/log/performance.log
+
+    # 1. Analyze current performance
+    ./tools/sqlite-maintenance.sh --stats > /tmp/db-stats-before.txt
+
+    # 2. Run optimization
+    ./tools/sqlite-maintenance.sh --full
+
+    # 3. Compare results
+    ./tools/sqlite-maintenance.sh --stats > /tmp/db-stats-after.txt
+
+    # 4. Generate optimization report
+    cat > /tmp/optimization-report.txt << EOF
+Database Optimization Report - $(date)
+=====================================
+
+Performance Metrics Before:
+$(cat /tmp/db-stats-before.txt)
+
+Performance Metrics After:
+$(cat /tmp/db-stats-after.txt)
+
+Optimization Actions Completed:
+- Database VACUUM operation
+- Index rebuilding
+- Statistics update
+- WAL checkpoint
+
+EOF
+
+    # 5. Email report if configured
+    if command -v mail >/dev/null 2>&1; then
+        mail -s "Database Optimization Report" admin@your-domain.com < /tmp/optimization-report.txt
+    fi
+
+    # 6. Cleanup
+    rm /tmp/db-stats-*.txt /tmp/optimization-report.txt
+}
+```
+
+#### Resource Optimization
+```bash
+# System resource optimization
+optimize_system_resources() {
+    echo "$(date): Starting system resource optimization" >> /var/log/performance.log
+
+    # 1. Container resource analysis
+    docker stats --no-stream --format "table {{.Name}}	{{.CPUPerc}}	{{.MemUsage}}" > /tmp/resource-usage.txt
+
+    # 2. Identify resource optimization opportunities
+    # Check for memory leaks
+    container_memory=$(docker stats --no-stream vaultwarden --format '{{.MemUsage}}' | cut -d'/' -f1)
+
+    # 3. Optimize Docker resources
+    docker system prune -f
+
+    # 4. Adjust container limits if needed
+    # This requires editing docker-compose.yml and restarting services
+
+    echo "Resource optimization completed" >> /var/log/performance.log
+}
+```
+
+This operations runbook provides comprehensive procedures for managing VaultWarden-OCI-NG in production environments, ensuring reliable operation and effective incident response.
