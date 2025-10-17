@@ -1,983 +1,556 @@
 # Script Reference Guide
 
-> **🎯 Script Philosophy**: Comprehensive reference for all scripts in VaultWarden-OCI-Minimal, providing detailed usage, parameters, and integration information for operational excellence.
+This document provides comprehensive reference documentation for all scripts included in the VaultWarden-OCI-NG project. Each script is designed for specific operational tasks and follows consistent patterns for logging, error handling, and security.
 
-## 📋 **Script Architecture Overview**
+## Core Scripts
 
-VaultWarden-OCI-Minimal uses a **modular script architecture** with shared libraries and specialized tools:
+### `startup.sh`
+**Primary entry point for starting the VaultWarden stack**
 
-```bash
-Script Organization:
-├── Entry Points
-│   ├── startup.sh - Main service orchestration
-│   └── init-setup.sh - Initial system setup
-│
-├── Core Libraries (/lib/)
-│   ├── config.sh - Configuration management
-│   ├── logging.sh - Centralized logging
-│   ├── validation.sh - System validation
-│   ├── system.sh - OS operations
-│   └── monitoring.sh - Health monitoring
-│
-├── Operational Tools (/tools/)
-│   ├── Database Management
-│   ├── Backup and Recovery
-│   ├── Monitoring and Health
-│   ├── Security and Updates
-│   └── Configuration Management
-│
-└── Integration Scripts
-    ├── OCI Vault integration
-    ├── CloudFlare automation  
-    └── System service management
-```
+**Purpose**: Orchestrates the complete startup process including secret management, service initialization, and health validation.
 
-### **Script Execution Context**
-```bash
-Execution Requirements:
-├── Root Privileges: Required for system-level operations
-├── Working Directory: Must be project root directory
-├── Environment: Ubuntu 24.04 LTS (primary), other Linux (compatible)
-├── Dependencies: Automatically installed by init-setup.sh
-└── Network: Internet connectivity for external integrations
-```
-
-## 🚀 **Entry Point Scripts**
-
-### **startup.sh** - Main Service Controller
-
-#### **Overview**
-The primary entry point for VaultWarden-OCI-Minimal operations. Handles configuration loading, environment preparation, service orchestration, and health validation.
-
-#### **Usage Syntax**
+**Usage**:
 ```bash
 ./startup.sh [OPTIONS]
-
-OPTIONS:
-  --help, -h        Show help information
-  --validate        Validate configuration and prerequisites only
-  --debug           Enable debug logging output
-  --force           Skip confirmations and safety checks
-  --dry-run         Show what would be done without execution
 ```
 
-#### **Execution Examples**
-```bash
-# Standard service startup
-./startup.sh
+**Options**:
+- `--help, -h`: Display help information
+- `--validate`: Validate configuration and prerequisites only (no service start)
+- `--secrets-info`: Show encrypted secrets information and management commands
 
-# Configuration validation only
-./startup.sh --validate
+**Functionality**:
+1. **Secret Management**: Decrypts SOPS+Age encrypted secrets and prepares Docker secrets
+2. **Environment Preparation**: Creates required directories with secure permissions
+3. **Pre-startup Tasks**: Updates CloudFlare IPs, renders configuration templates
+4. **Service Orchestration**: Starts Docker Compose services in dependency order
+5. **Health Validation**: Verifies all services are healthy before completion
+6. **Status Reporting**: Displays service URLs and management commands
 
-# Debug mode for troubleshooting
-DEBUG=1 ./startup.sh
-
-# Validate system before making changes
-./startup.sh --validate --debug
+**Example Output**:
+```
+[startup] VaultWarden-OCI-NG - Enhanced Startup with SOPS+Age
+[startup] Loading Encrypted Secrets
+[startup] ✅ Encrypted secrets accessible
+[startup] ✅ Docker secrets prepared
+[startup] ✅ VaultWarden is healthy
+[startup] ✅ Services started successfully
 ```
 
-#### **Internal Workflow**
-```bash
-Startup Process Flow:
-1. System validation (prerequisites, Docker, networking)
-2. Configuration loading (OCI Vault → Local → Interactive)
-3. Environment preparation (directories, permissions, exports)
-4. Pre-startup tasks (CloudFlare updates, DDNS config)
-5. Service orchestration (dependency-aware container startup)
-6. Health validation (container health, endpoint checks)
-7. Post-startup reporting (service info, troubleshooting)
-```
-
-#### **Exit Codes**
-```bash
-Exit Code Meanings:
-0  - Success: All operations completed successfully
-1  - Configuration Error: Invalid or missing configuration
-2  - System Error: System prerequisites not met
-3  - Docker Error: Docker daemon or compose issues
-4  - Network Error: Connectivity or DNS problems
-5  - Service Error: Container startup or health check failures
-```
-
-#### **Integration Points**
-```bash
-Dependencies:
-├── lib/config.sh - Configuration loading and validation
-├── lib/validation.sh - System prerequisite checking
-├── lib/system.sh - Service and process management
-├── lib/logging.sh - Consistent logging output
-└── docker-compose.yml - Container orchestration definition
-
-External Integration:
-├── OCI Vault API (if OCI_SECRET_OCID configured)
-├── Docker daemon and Docker Compose
-├── SystemD service management
-└── CloudFlare API (if credentials configured)
-```
+**Important Notes**:
+- Always use this script instead of `docker compose up` directly
+- Requires prior execution of `./tools/init-setup.sh`
+- Automatically handles secret decryption and container secret injection
 
 ---
 
-### **tools/init-setup.sh** - System Initialization
+## Setup and Installation Scripts
 
-#### **Overview**
-Comprehensive system initialization script that prepares a fresh system for VaultWarden-OCI-Minimal deployment with full automation.
+### `tools/init-setup.sh`
+**One-time system setup and configuration script**
 
-#### **Usage Syntax**
+**Purpose**: Transforms a fresh Ubuntu server into a production-ready VaultWarden host with complete security hardening and automation.
+
+**Usage**:
 ```bash
 sudo ./tools/init-setup.sh [OPTIONS]
-
-OPTIONS:
-  --auto            Non-interactive mode with sensible defaults
-  --oci-optimized   Apply OCI A1 Flex specific optimizations
-  --generic         Standard configuration for generic VPS/cloud
-  --development     Development-friendly configuration
-  --maximum-security Enhanced security hardening
-  --proxy-mode      Configure for reverse proxy deployment
-  --help, -h        Show detailed help and usage examples
 ```
 
-#### **Execution Examples**
+**Options**:
+- `--auto`: Non-interactive mode using environment variables
+- `--help`: Display detailed usage information
+
+**Prerequisites**:
+- Fresh Ubuntu 24.04 LTS installation
+- Root or sudo access
+- Internet connectivity
+
+**Complete Functionality**:
+
+#### System Dependencies
+- Docker Engine and Docker Compose installation
+- Essential system packages (curl, jq, unzip, etc.)
+- System service configuration
+
+#### Security Hardening  
+- UFW firewall configuration with minimal attack surface
+- Fail2ban installation with VaultWarden-specific jails
+- Secure directory structure creation
+- File permission hardening
+
+#### Secret Management Setup
+- SOPS (Secrets OPerationS) installation
+- Age encryption key generation
+- Encrypted secrets file initialization
+- Docker secrets directory preparation
+
+#### Automation Configuration
+- Cron job installation for automated backups
+- System monitoring cron jobs
+- Log rotation configuration
+- Update automation setup
+
+**Interactive Prompts**:
 ```bash
-# Interactive setup with guided configuration
-sudo ./tools/init-setup.sh
-
-# Automated setup for scripted deployments
-sudo ./tools/init-setup.sh --auto
-
-# OCI A1 Flex optimized deployment
-sudo ./tools/init-setup.sh --oci-optimized
-
-# Maximum security configuration
-sudo ./tools/init-setup.sh --maximum-security
+Domain name (e.g., https://vault.company.com): 
+Administrator email address: 
+SMTP host (optional): 
+CloudFlare API token (optional):
 ```
 
-#### **Setup Categories**
+**Non-Interactive Environment Variables**:
 ```bash
-System Preparation:
-├── Package installation (Docker, security tools, utilities)
-├── User and permission configuration
-├── Firewall setup (UFW) and security hardening
-├── System service configuration (Docker, fail2ban)
-
-Application Configuration:
-├── Dynamic path and project name detection
-├── Secure configuration file generation
-├── SSL certificate and domain setup
-├── Database initialization and optimization
-
-Security Configuration:
-├── Fail2ban setup with VaultWarden integration
-├── CloudFlare integration (optional)
-├── File permission hardening
-├── Audit logging configuration
-
-Automation Setup:
-├── Cron job installation for maintenance
-├── Monitoring and health check automation
-├── Backup system configuration
-├── Update and cleanup automation
-```
-
-#### **Configuration File Generation**
-```bash
-Generated Configuration Structure:
-{
-  "DOMAIN": "https://vault.yourdomain.com",
-  "ADMIN_EMAIL": "admin@yourdomain.com", 
-  "ADMIN_TOKEN": "cryptographically-secure-token",
-  "BACKUP_PASSPHRASE": "aes-256-encryption-key",
-  "SMTP_HOST": "smtp.gmail.com",
-  "SMTP_FROM": "vaultwarden@yourdomain.com",
-  "CLOUDFLARE_EMAIL": "user@cloudflare.com",
-  "CLOUDFLARE_API_KEY": "global-api-key",
-  "DATABASE_URL": "sqlite:///data/db.sqlite3",
-  "CONTAINER_NAME_*": "dynamic-container-names"
-}
-
-Security Features:
-├── Random token generation (OpenSSL, 32 bytes, base64)
-├── File permissions (600 for configs, 700 for data)
-├── Configuration validation and syntax checking
-└── Backup creation before any modifications
-```
-
-## 📚 **Library Scripts (/lib/)**
-
-### **lib/config.sh** - Configuration Management
-
-#### **Overview** 
-Centralized configuration management with support for multiple sources, dynamic path generation, and secure secret handling.
-
-#### **Key Functions**
-```bash
-Public Functions:
-├── _load_configuration() - Load config from OCI Vault or local file
-├── get_config_value(key) - Retrieve specific configuration value
-├── set_config_value(key, value) - Update configuration value
-├── _display_config_summary() - Show configuration overview
-├── validate_configuration() - Validate configuration completeness
-├── backup_current_config() - Create versioned configuration backup
-└── get_project_paths() - Get dynamic project paths
-
-Internal Functions:
-├── _load_from_oci_vault() - OCI Vault secret retrieval
-├── _load_from_local_file() - Local settings.json loading
-├── _parse_json_config() - JSON parsing and validation
-├── _export_configuration() - Environment variable export
-└── _validate_oci_environment() - OCI CLI validation
-```
-
-#### **Dynamic Path System**
-```bash
-Path Generation Logic:
-PROJECT_NAME="$(basename "$ROOT_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')"
-PROJECT_STATE_DIR="/var/lib/${PROJECT_NAME}"
-SERVICE_NAME="${PROJECT_NAME}.service"
-
-Generated Paths:
-├── Data: /var/lib/project-name/
-├── Logs: /var/lib/project-name/logs/
-├── Backups: /var/lib/project-name/backups/
-├── Config Backups: /var/lib/project-name/config-backups/
-└── Service: project-name.service
-```
-
-#### **Configuration Priority**
-```bash
-Configuration Loading Order:
-1. OCI Vault (if OCI_SECRET_OCID environment variable exists)
-2. Local settings.json file (if exists and readable)
-3. SystemD environment file (if exists)
-4. Interactive prompts (fallback for missing critical values)
-
-Validation Steps:
-├── JSON syntax validation
-├── Required key presence checking
-├── Value format validation (URLs, emails, etc.)
-├── Security validation (file permissions, token strength)
-└── Integration testing (OCI connectivity, SMTP validation)
+export DOMAIN="https://vault.company.com"
+export ADMIN_EMAIL="admin@company.com"
+export SMTP_HOST="smtp.gmail.com"
+export SMTP_FROM="noreply@company.com"
+export CLOUDFLARE_API_TOKEN="your-token"
 ```
 
 ---
 
-### **lib/logging.sh** - Centralized Logging
+## Secret Management Scripts
 
-#### **Overview**
-Provides consistent, color-coded logging across all scripts with multiple output levels and formatting options.
+### `tools/edit-secrets.sh`  
+**Secure encrypted secrets editor**
 
-#### **Logging Functions**
-```bash
-Core Logging Functions:
-├── _log_info(message) - General information (blue)
-├── _log_success(message) - Success messages (green)
-├── _log_warning(message) - Warning messages (yellow)
-├── _log_error(message) - Error messages (red)
-├── _log_debug(message) - Debug messages (gray, if DEBUG=1)
-
-Formatting Functions:
-├── _log_header(title) - Section headers with formatting
-├── _log_section(title) - Subsection headers
-├── _print_key_value(key, value) - Formatted key-value pairs
-├── _log_confirm(prompt, default) - Interactive confirmation
-├── _log_prompt(prompt, default) - Interactive input prompts
-└── _log_numbered_item(num, text) - Numbered list items
-```
-
-#### **Usage Examples**
-```bash
-# Basic logging
-_log_info "Starting configuration validation"
-_log_success "Database connection successful"
-_log_warning "SSL certificate expires in 30 days"
-_log_error "Failed to connect to OCI Vault"
-
-# Debug logging (only shown if DEBUG=1)
-_log_debug "Configuration loaded: ${#CONFIG_VALUES[@]} keys"
-
-# Formatted output
-_log_header "VaultWarden Health Check"
-_print_key_value "Status" "Healthy"
-_print_key_value "Response Time" "89ms"
-
-# Interactive prompts
-_log_confirm "Proceed with database optimization?" "Y"
-read -r response
-```
-
-#### **Color and Format Codes**
-```bash
-Color Variables:
-├── RED='\033[0;31m' - Error messages
-├── GREEN='\033[0;32m' - Success messages  
-├── YELLOW='\033[1;33m' - Warning messages
-├── BLUE='\033[0;34m' - Information messages
-├── CYAN='\033[0;36m' - Prompts and questions
-├── GRAY='\033[0;37m' - Debug messages
-└── NC='\033[0m' - No color (reset)
-
-Format Variables:
-├── BOLD='\033[1m' - Bold text
-├── UNDERLINE='\033[4m' - Underlined text
-└── ITALIC='\033[3m' - Italic text
-```
-
----
-
-### **lib/validation.sh** - System Validation
-
-#### **Overview**
-Comprehensive system validation functions for prerequisites, health checks, and environment verification.
-
-#### **Validation Categories**
-```bash
-System Validation:
-├── _validate_running_as_root() - Root privilege check
-├── _validate_os_compatibility() - Operating system compatibility
-├── _validate_system_resources() - RAM, disk, CPU validation
-├── _validate_required_commands() - Command availability check
-└── _validate_network_connectivity() - Internet connectivity test
-
-Docker Validation:
-├── _validate_docker_daemon() - Docker service validation
-├── _validate_docker_compose() - Docker Compose availability
-├── _validate_compose_file(file) - Compose file syntax validation
-└── _validate_port_availability(port) - Port binding check
-
-Security Validation:
-├── _validate_secure_permissions(file) - File permission audit
-├── _validate_no_world_writable(dir) - World-writable file check
-├── _validate_file_permissions(file, expected) - Specific permission check
-└── _validate_directory_writable(dir) - Write permission check
-
-Configuration Validation:
-├── _validate_json_file(file) - JSON syntax validation
-├── _validate_json_keys(file, keys) - Required key validation
-├── _validate_file_exists(file) - File existence check
-└── _validate_directory_exists(dir) - Directory existence check
-```
-
-#### **Resource Requirements**
-```bash
-Minimum System Requirements:
-├── RAM: 512MB (2GB recommended)
-├── Disk: 5GB available (20GB recommended)
-├── CPU: 1 core (ARM64 or x86_64)
-└── Network: Internet connectivity for setup
-
-Required Commands:
-├── curl - HTTP client for API calls
-├── jq - JSON processing
-├── docker - Container runtime
-├── systemctl - Service management
-└── openssl - Cryptographic operations
-```
-
----
-
-### **lib/system.sh** - System Operations
-
-#### **Overview**
-Operating system interaction functions for package management, service control, and system administration.
-
-#### **System Management Functions**
-```bash
-Package Management:
-├── _update_package_index() - Update apt package lists
-├── _install_package(package) - Install individual package
-├── _install_packages(packages...) - Install multiple packages
-├── _package_installed(package) - Check package installation
-└── _clean_package_cache() - Clean apt cache and autoremove
-
-Service Management:  
-├── _enable_service(service) - Enable systemd service
-├── _disable_service(service) - Disable systemd service
-├── _start_service(service) - Start systemd service
-├── _stop_service(service) - Stop systemd service
-├── _restart_service(service) - Restart systemd service
-└── _service_status(service) - Check service status
-
-File and Directory Operations:
-├── _create_directory_secure(path, perms) - Create directory with permissions
-├── _create_file_secure(path, perms, content) - Create file with content
-├── _backup_file(source, destination) - Create file backup
-├── _set_file_permissions(file, perms) - Set specific permissions
-└── _ensure_directory_exists(path) - Create directory if needed
-```
-
-#### **Usage Examples**
-```bash
-# Package management
-_install_package "docker.io"
-_install_packages "jq" "curl" "fail2ban"
-
-# Service management
-_enable_service "docker"
-_start_service "docker"
-_restart_service "fail2ban"
-
-# File operations
-_create_directory_secure "/var/lib/vaultwarden" "700"
-_create_file_secure "/etc/config" "600" "configuration content"
-```
-
-## 🛠️ **Operational Tools (/tools/)**
-
-### **Database Management Scripts**
-
-#### **tools/db-backup.sh** - Database Backup
-
-**Overview**: Creates encrypted database backups in multiple formats with integrity verification.
+**Purpose**: Provides secure editing of the SOPS+Age encrypted secrets file with automatic encryption/decryption.
 
 **Usage**:
 ```bash
-./tools/db-backup.sh [OPTIONS]
-
-OPTIONS:
-  --format FORMAT   Backup format: binary|sql|json|csv|all (default: binary)
-  --output PATH     Output directory (default: auto-detected)
-  --verify PATH     Verify existing backup file
-  --dry-run         Show what would be done
-  --help, -h        Show help information
-
-EXAMPLES:
-  ./tools/db-backup.sh                    # Standard binary backup
-  ./tools/db-backup.sh --format sql       # Human-readable SQL dump
-  ./tools/db-backup.sh --format json      # Structured JSON export
-  ./tools/db-backup.sh --verify latest    # Verify most recent backup
+sudo ./tools/edit-secrets.sh [OPTIONS]
 ```
 
-**Backup Formats**:
+**Options**:
+- `--view`: Display decrypted secrets without editing
+- `--help`: Show usage information
+
+**Security Features**:
+- Temporary decryption in memory only
+- Automatic re-encryption on save
+- Editor process isolation
+- Secure file permission maintenance
+
+**Managed Secrets**:
+- `admin_token`: VaultWarden admin panel access token
+- `smtp_password`: SMTP authentication password  
+- `backup_passphrase`: Backup encryption passphrase
+- `push_installation_key`: Push notification service key
+- `cloudflare_api_token`: CloudFlare API token for fail2ban integration
+
+**Example Workflow**:
 ```bash
-Binary Format (default):
-├── Fastest backup and restore
-├── Native SQLite format preservation
-├── Optimal compression ratio
-└── Best for routine automated backups
+# Edit secrets securely
+sudo ./tools/edit-secrets.sh
 
-SQL Format:
-├── Human-readable SQL statements
-├── Cross-platform compatibility
-├── Easy partial restoration
-└── Good for migrations and debugging
+# View current secrets
+sudo ./tools/edit-secrets.sh --view
 
-JSON Format:
-├── Structured data export
-├── API-friendly format
-├── Programmatic data access
-└── Good for data analysis
-
-CSV Format:
-├── Individual table exports
-├── Spreadsheet compatibility
-├── Easy data analysis
-└── Good for reporting and auditing
+# Check specific secret
+sudo ./tools/edit-secrets.sh --view | grep admin_token
 ```
 
 ---
 
-#### **tools/sqlite-maintenance.sh** - Database Optimization
+## Backup and Recovery Scripts
 
-**Overview**: Database maintenance, optimization, and integrity checking for VaultWarden SQLite database.
+### `tools/create-full-backup.sh`
+**Comprehensive system backup creation**
 
-**Usage**:
-```bash
-./tools/sqlite-maintenance.sh [OPTIONS]
-
-OPTIONS:
-  -t, --type TYPE      Maintenance type: quick|full|integrity|repair
-  --analyze            Update database statistics
-  --check              Integrity check only  
-  --vacuum             Reclaim unused space
-  --help, -h           Show help information
-
-EXAMPLES:
-  ./tools/sqlite-maintenance.sh -t quick    # Quick maintenance (5min)
-  ./tools/sqlite-maintenance.sh -t full     # Full optimization (15min)
-  ./tools/sqlite-maintenance.sh --check     # Integrity check only
-  ./tools/sqlite-maintenance.sh --repair    # Attempt database repair
-```
-
-**Maintenance Types**:
-```bash
-Quick Maintenance (daily):
-├── Integrity check (PRAGMA integrity_check)
-├── Statistics update (ANALYZE)
-├── WAL checkpoint (PRAGMA wal_checkpoint)
-└── Basic performance metrics
-
-Full Maintenance (weekly):
-├── All quick maintenance operations
-├── Database vacuum (VACUUM)
-├── Index optimization
-├── Fragmentation analysis
-└── Performance benchmarking
-
-Integrity Check:
-├── Database corruption detection
-├── Foreign key constraint validation
-├── Index consistency verification
-└── Table structure validation
-
-Repair Operations:
-├── Database recovery attempts
-├── Corruption repair (limited)
-├── Index rebuilding
-└── Emergency data recovery
-```
-
-### **Backup and Recovery Scripts**
-
-#### **tools/create-full-backup.sh** - System Backup
-
-**Overview**: Creates comprehensive encrypted backups of the entire VaultWarden system including configuration, data, and system state.
+**Purpose**: Creates encrypted, compressed backups of the entire VaultWarden system including database, attachments, configuration, and logs.
 
 **Usage**:
 ```bash
 ./tools/create-full-backup.sh [OPTIONS]
-
-OPTIONS:
-  --emergency         Quick backup with minimal validation
-  --migration         Include migration-specific data
-  --pre-update        Backup before system updates
-  --forensic          Preserve system state for investigation
-  --help, -h          Show help information
-
-EXAMPLES:
-  ./tools/create-full-backup.sh              # Standard full backup
-  ./tools/create-full-backup.sh --emergency  # Fast emergency backup
-  ./tools/create-full-backup.sh --migration  # Migration-ready backup
 ```
 
-**Backup Components**:
-```bash
-Full Backup Includes:
-├── Database and all user data
-├── Configuration files (settings.json, etc.)
-├── SSL certificates and keys
-├── Caddy and reverse proxy configuration
-├── Fail2ban rules and security configuration
-├── Log files (recent, size-limited)
-├── Docker volumes and persistent data
-└── System service configurations
+**Options**:
+- `--output-dir PATH`: Specify custom backup destination
+- `--compression LEVEL`: Set compression level (1-9, default: 6)
+- `--exclude-logs`: Skip log files in backup
+- `--dry-run`: Show what would be backed up without creating files
 
-Backup Features:
-├── AES-256-GCM encryption
-├── Compression (typically 70% size reduction)
-├── Integrity verification (SHA-256 checksums)
-├── Metadata preservation (timestamps, permissions)
-└── Incremental backup capability (future enhancement)
+**Backup Contents**:
+- VaultWarden SQLite database
+- User attachments and vault data
+- Configuration files (settings.json)
+- SSL certificates and keys
+- Log files (optional)
+- Docker Compose configuration
+
+**Backup Format**:
+```
+backup-full-YYYYMMDD-HHMMSS.tar.gz.enc
+```
+
+**Encryption**: Uses the `backup_passphrase` from encrypted secrets for AES-256 encryption.
+
+**Example**:
+```bash
+# Create standard full backup
+./tools/create-full-backup.sh
+
+# Create backup excluding logs  
+./tools/create-full-backup.sh --exclude-logs
+
+# Test backup creation
+./tools/create-full-backup.sh --dry-run
+```
+
+### `tools/db-backup.sh`
+**Database-specific backup utility**
+
+**Purpose**: Creates encrypted backups of the VaultWarden SQLite database with optional compression and retention management.
+
+**Usage**:
+```bash
+./tools/db-backup.sh [OPTIONS]
+```
+
+**Options**:
+- `--output-dir PATH`: Custom backup location
+- `--retention-days N`: Keep backups for N days (default: 30)
+- `--compress`: Apply gzip compression
+- `--dry-run`: Show backup plan without execution
+
+**Functionality**:
+- SQLite database consistency checks
+- Atomic backup creation (no corruption risk)
+- Automatic old backup cleanup
+- Backup integrity verification
+
+**Backup Format**:
+```
+db-backup-YYYYMMDD-HHMMSS.sqlite3.enc
+```
+
+**Automated Schedule**: Runs daily at 2:00 AM via cron job.
+
+### `tools/restore.sh`
+**System and database restoration utility**
+
+**Purpose**: Restores VaultWarden system or database from encrypted backup files.
+
+**Usage**:
+```bash
+./tools/restore.sh [OPTIONS] <backup-file>
+```
+
+**Options**:
+- `--list`: Show available backup files
+- `--verify BACKUP`: Verify backup integrity without restoring
+- `--dry-run BACKUP`: Show restoration plan without execution
+- `--force`: Skip confirmation prompts
+- `--database-only`: Restore only database, skip configuration
+
+**Safety Features**:
+- Pre-restore system validation
+- Automatic service stopping during restore
+- Current state backup before restoration
+- Post-restore health verification
+
+**Example Usage**:
+```bash
+# List available backups
+./tools/restore.sh --list
+
+# Verify backup integrity
+./tools/restore.sh --verify /path/to/backup.tar.gz.enc
+
+# Perform full restoration
+./tools/restore.sh /path/to/backup.tar.gz.enc
+
+# Database-only restoration
+./tools/restore.sh --database-only /path/to/db-backup.sqlite3.enc
 ```
 
 ---
 
-#### **tools/restore.sh** - Data Recovery
+## Monitoring and Maintenance Scripts
 
-**Overview**: Interactive and automated restoration system with multiple recovery scenarios and validation.
+### `tools/check-health.sh`
+**Comprehensive system health monitoring**
+
+**Purpose**: Performs detailed health checks across all system components and services.
 
 **Usage**:
 ```bash
-./tools/restore.sh [PATH] [OPTIONS]
-
-OPTIONS:
-  --database-only     Restore database data only
-  --config-only       Restore configuration only
-  --dry-run          Preview restore without making changes
-  --verify PATH      Verify backup integrity
-  --list             List available backups
-  --force            Skip confirmations
-  --help, -h         Show help information
-
-EXAMPLES:
-  ./tools/restore.sh                           # Interactive restore wizard
-  ./tools/restore.sh /path/to/backup.tar.gz   # Direct restore
-  ./tools/restore.sh --verify latest          # Verify recent backup
-  ./tools/restore.sh --list                   # Show available backups
+./tools/check-health.sh [OPTIONS]
 ```
 
-**Restore Scenarios**:
+**Options**:
+- `--verbose`: Detailed output with diagnostic information
+- `--sops-only`: Check only SOPS+Age secret management
+- `--services-only`: Check only running services
+- `--json`: Output results in JSON format
+
+**Health Check Categories**:
+
+#### Container Health
+- Service running status
+- Container health check status
+- Resource utilization monitoring
+- Docker daemon connectivity
+
+#### SSL Certificate Monitoring  
+- Certificate validity and expiration
+- Certificate chain verification
+- Let's Encrypt renewal status
+
+#### Database Health
+- SQLite database integrity
+- Database file permissions
+- Query performance metrics
+- Backup system status
+
+#### Security Status
+- UFW firewall rule verification
+- Fail2ban jail status and activity
+- File permission auditing
+- Secret management verification
+
+#### System Resources
+- Disk space monitoring
+- Memory utilization
+- CPU load assessment
+- Network connectivity
+
+**Example Output**:
 ```bash
-Complete System Restore:
-├── Stop all services safely
-├── Restore database and user data
-├── Restore configuration files
-├── Restore SSL certificates
-├── Apply correct file permissions
-├── Restart services with validation
-└── Verify system functionality
-
-Database-Only Restore:
-├── Stop VaultWarden service
-├── Backup current database
-├── Restore database from backup
-├── Validate database integrity
-├── Restart VaultWarden service
-└── Verify user data accessibility
-
-Configuration Restore:
-├── Backup current configuration
-├── Restore configuration files
-├── Validate configuration syntax
-├── Restart affected services
-└── Verify configuration applied correctly
-
-Disaster Recovery:
-├── Complete system restoration on new server
-├── Network and DNS reconfiguration
-├── SSL certificate regeneration
-├── Service validation and testing
-└── User notification and testing
+[health] System Health Check Report
+[health] ✅ All containers healthy
+[health] ✅ SSL certificate valid (expires: 2024-04-15)
+[health] ✅ Database integrity verified
+[health] ✅ Firewall active with proper rules
+[health] ✅ Backup system operational
+[health] ⚠️  Disk usage: 78% (monitor closely)
 ```
 
-### **Monitoring and Health Scripts**
+### `tools/monitor.sh`
+**Automated monitoring and self-healing**
 
-#### **tools/monitor.sh** - System Monitoring
-
-**Overview**: Comprehensive system health monitoring with automated recovery, alerting, and reporting capabilities.
+**Purpose**: Continuous monitoring script that runs via cron to detect and automatically resolve common issues.
 
 **Usage**:
 ```bash
 ./tools/monitor.sh [OPTIONS]
-
-OPTIONS:
-  --summary           Quick health overview
-  --verbose           Detailed health information
-  --daily-report      Daily operations summary
-  --security-check    Security-focused monitoring
-  --performance       Performance metrics analysis
-  --test-all          Test all monitoring functions
-  --help, -h          Show help information
-
-EXAMPLES:
-  ./tools/monitor.sh --summary        # Quick status check
-  ./tools/monitor.sh --verbose        # Detailed health report
-  ./tools/monitor.sh --security-check # Security event analysis
 ```
 
-**Monitoring Categories**:
-```bash
-Health Monitoring:
-├── Container health status (Docker health checks)
-├── Database connectivity and performance
-├── SSL certificate validity and expiration
-├── Disk space and storage utilization
-├── Memory and CPU usage patterns
-└── Network connectivity and DNS resolution
+**Options**:
+- `--summary`: Brief health status summary
+- `--test-email`: Send test notification email
+- `--no-restart`: Check health but don't restart failed services
 
-Security Monitoring:
-├── Failed authentication attempts
-├── Fail2ban activity and blocked IPs
-├── Firewall rule effectiveness
-├── SSL configuration security
-├── File permission auditing
-└── Access pattern analysis
+**Monitoring Capabilities**:
 
-Performance Monitoring:
-├── Response time measurements
-├── Database query performance
-├── Resource utilization trends
-├── Throughput and capacity metrics
-├── Error rate tracking
-└── Service availability metrics
-```
+#### Service Monitoring
+- Container health status verification  
+- Automatic restart of failed services
+- Resource limit breach detection
+- Performance degradation alerts
 
-#### **Automated Recovery Features**
-```bash
-Self-Healing Capabilities:
-├── Container restart for failed services
-├── Log rotation when disk space low
-├── Database optimization when performance degrades
-├── Memory cleanup during pressure
-├── Network connectivity restoration
-└── Configuration validation and repair
+#### Security Monitoring
+- Failed authentication attempt tracking
+- Unusual access pattern detection
+- SSL certificate expiration warnings
+- Firewall rule compliance verification
 
-Recovery Escalation:
-├── Immediate: Automated recovery (3 attempts)
-├── Warning: Email notification to administrators
-├── Critical: Service degradation alerts
-├── Emergency: Fail-safe mode activation
-└── Manual: Escalation to human intervention
-```
+#### System Monitoring  
+- Disk space threshold monitoring
+- Memory leak detection
+- Database performance tracking
+- Backup success verification
 
-### **Security and Update Scripts**
+#### Automated Recovery Actions
+- Service restart for failed containers
+- Database optimization on performance issues
+- Log rotation for disk space management
+- Email notifications for critical issues
 
-#### **tools/update-cloudflare-ips.sh** - CloudFlare Integration
+**Automated Schedule**: Runs every 5 minutes via cron job.
 
-**Overview**: Maintains current CloudFlare IP ranges for proper reverse proxy configuration and security.
+### `tools/sqlite-maintenance.sh`
+**SQLite database optimization and maintenance**
+
+**Purpose**: Performs comprehensive SQLite database maintenance including optimization, integrity checks, and performance tuning.
 
 **Usage**:
 ```bash
-./tools/update-cloudflare-ips.sh [OPTIONS]
-
-OPTIONS:
-  --quiet        Suppress non-error output
-  --force        Force update even if recent
-  --verify       Verify current configuration
-  --help, -h     Show help information
-
-EXAMPLES:
-  ./tools/update-cloudflare-ips.sh          # Update IP ranges
-  ./tools/update-cloudflare-ips.sh --quiet  # Silent operation (cron)
-  ./tools/update-cloudflare-ips.sh --verify # Check current config
+./tools/sqlite-maintenance.sh [OPTIONS]
 ```
 
-**Integration Points**:
+**Options**:
+- `--full`: Complete maintenance including VACUUM and optimization
+- `--check`: Database integrity verification only
+- `--optimize`: Performance optimization only  
+- `--stats`: Display database statistics
+- `--dry-run`: Show maintenance plan without execution
+
+**Maintenance Operations**:
+
+#### Integrity Verification
+- Database corruption detection
+- Foreign key constraint validation
+- Index consistency verification
+- Schema validation
+
+#### Performance Optimization
+- VACUUM operation for space reclamation
+- Index rebuilding and optimization
+- Query plan analysis
+- Statistics update
+
+#### Space Management
+- WAL (Write-Ahead Logging) checkpoint
+- Temporary file cleanup
+- Free page management
+- Database size reporting
+
+**Example Output**:
 ```bash
-CloudFlare IP Management:
-├── Fetch current IPv4 and IPv6 ranges from CloudFlare API
-├── Generate Caddy configuration for trusted proxy IPs  
-├── Update real IP detection for accurate logging
-├── Maintain security rule compatibility
-└── Validate configuration before applying
-
-Generated Configuration:
-├── trusted_proxies directives for Caddy
-├── Real IP header processing rules
-├── Security rule IP range updates
-└── Fail2ban integration maintenance
+[sqlite] Database Maintenance Report
+[sqlite] ✅ Integrity check passed
+[sqlite] ✅ VACUUM completed - 2.3MB reclaimed  
+[sqlite] ✅ Indexes rebuilt - 15% performance improvement
+[sqlite] ✅ Statistics updated
+[sqlite] Database size: 45.7MB (was 48.0MB)
 ```
+
+**Automated Schedule**: Runs weekly on Saturday nights at 1:00 AM.
 
 ---
 
-#### **tools/update-secrets.sh** - Secret Management
+## Utility Scripts
 
-**Overview**: Secure secret rotation and synchronization between OCI Vault and local configuration.
+### `tools/update-cloudflare-ips.sh`
+**CloudFlare IP range updater**
+
+**Purpose**: Updates Caddy reverse proxy configuration with current CloudFlare IP ranges for enhanced security.
+
+**Usage**:  
+```bash
+./tools/update-cloudflare-ips.sh [OPTIONS]
+```
+
+**Options**:
+- `--quiet`: Suppress output messages
+- `--force`: Update even if ranges haven't changed
+- `--output PATH`: Specify output file path
+
+**Functionality**:
+- Downloads current CloudFlare IP ranges (IPv4 and IPv6)
+- Updates Caddy configuration files
+- Validates IP range formats
+- Triggers Caddy configuration reload
+
+**Automated Execution**: Runs automatically during `startup.sh` execution.
+
+### `tools/render-ddclient-conf.sh`
+**Dynamic DNS configuration renderer**
+
+**Purpose**: Generates ddclient configuration files from templates with secure secret injection.
 
 **Usage**:
 ```bash
-./tools/update-secrets.sh [OPTIONS]
-
-OPTIONS:
-  --rotate-admin      Generate new admin token
-  --rotate-backup     Generate new backup passphrase
-  --sync-to-oci       Upload local config to OCI Vault
-  --sync-from-oci     Download OCI config to local file
-  --compare           Compare OCI and local configurations
-  --help, -h          Show help information
-
-EXAMPLES:
-  ./tools/update-secrets.sh --rotate-admin    # New admin token
-  ./tools/update-secrets.sh --sync-to-oci     # Upload to OCI Vault
-  ./tools/update-secrets.sh --compare         # Check for drift
+./tools/render-ddclient-conf.sh <template> <output>
 ```
 
-**Secret Management Features**:
+**Parameters**:
+- `template`: Path to template file  
+- `output`: Generated configuration file path
+
+**Template Variables**:
+- `{{CLOUDFLARE_API_TOKEN}}`: CloudFlare API token from secrets
+- `{{DOMAIN}}`: Configured domain name
+- `{{DDCLIENT_HOST}}`: DNS hostname to update
+
+---
+
+## Library Functions
+
+### `lib/logging.sh`
+**Centralized logging functionality**
+
+**Functions**:
+- `_log_info()`: Information messages
+- `_log_warning()`: Warning messages  
+- `_log_error()`: Error messages
+- `_log_success()`: Success confirmation messages
+- `_log_header()`: Section headers
+- `_set_log_prefix()`: Set logging prefix for script identification
+
+### `lib/config.sh`  
+**Configuration management**
+
+**Functions**:
+- `load_config()`: Load and validate configuration
+- `get_config_value()`: Retrieve specific configuration values
+- `validate_configuration()`: Comprehensive configuration validation
+
+### `lib/validation.sh`
+**System validation functions**
+
+**Functions**:
+- `_validate_docker_daemon()`: Docker service verification
+- `_validate_network_connectivity()`: Network access validation
+- `_validate_compose_file()`: Docker Compose file validation
+
+### `lib/system.sh`
+**System utility functions**  
+
+**Functions**:
+- `_create_directory_secure()`: Secure directory creation
+- `_create_file_secure()`: Secure file creation with permissions
+- `_compose_service_running()`: Docker service status checking
+
+### `lib/sops.sh`
+**SOPS+Age integration**
+
+**Functions**:
+- `sops_decrypt()`: Secure secret decryption
+- `sops_encrypt()`: Secret encryption
+- `age_key_exists()`: Age key validation
+
+## Script Usage Patterns
+
+### Common Command Patterns
+
 ```bash
-Secret Rotation:
-├── Cryptographically secure token generation
-├── Automatic backup before rotation
-├── Service restart with new credentials
-├── Validation of new credentials
-└── Rollback capability if needed
+# System startup and management
+./startup.sh                    # Start all services
+./startup.sh --validate         # Validate configuration only
+docker compose down             # Stop all services
 
-Synchronization:
-├── Bi-directional sync (OCI ↔ Local)
-├── Configuration drift detection
-├── Conflict resolution procedures
-├── Backup before synchronization
-└── Validation after sync completion
+# Backup operations
+./tools/create-full-backup.sh   # Full system backup
+./tools/db-backup.sh           # Database backup only
+./tools/restore.sh --list      # List available backups
+
+# Monitoring and health
+./tools/check-health.sh        # Comprehensive health check
+./tools/monitor.sh --summary   # Brief status summary
+
+# Secret management
+sudo ./tools/edit-secrets.sh   # Edit encrypted secrets
+sudo ./tools/edit-secrets.sh --view  # View secrets
+
+# Maintenance
+./tools/sqlite-maintenance.sh --full  # Database optimization
 ```
 
-### **OCI Integration Scripts**
+### Error Handling
 
-#### **tools/oci-setup.sh** - OCI Vault Integration
+All scripts implement consistent error handling:
+- Exit codes: 0 for success, non-zero for failures
+- Structured logging with timestamps
+- Error message clarity and actionable guidance
+- Rollback capabilities where applicable
 
-**Overview**: Configure and manage OCI Vault integration for enterprise secret management.
+### Security Considerations
 
-**Usage**:
-```bash
-./tools/oci-setup.sh [OPTIONS]
+- Scripts requiring elevated privileges use `sudo` explicitly
+- Temporary files are created with secure permissions
+- Sensitive operations log to secure locations only
+- Secret exposure is prevented in process lists and logs
 
-OPTIONS:
-  --update-ocid OCID     Update secret OCID
-  --systemd-only OCID    Configure systemd integration only
-  --test-connection      Test OCI Vault connectivity
-  --help, -h             Show help information
-
-EXAMPLES:
-  ./tools/oci-setup.sh                        # Interactive OCI setup
-  ./tools/oci-setup.sh --test-connection      # Test current setup
-  ./tools/oci-setup.sh --update-ocid NEW_OCID # Update secret reference
-```
-
-**OCI Integration Features**:
-```bash
-Setup Process:
-├── OCI CLI validation and authentication
-├── Secret creation or connection to existing
-├── SystemD service integration
-├── Environment variable configuration
-├── Fallback mechanism setup
-└── Connection testing and validation
-
-Management Capabilities:
-├── Secret rotation coordination
-├── Access permission management
-├── Audit log integration
-├── Disaster recovery procedures
-└── Multi-region deployment support
-```
-
-## 🔧 **Script Integration and Automation**
-
-### **Cron Job Integration**
-
-#### **Automated Execution Schedule**
-```bash
-# Installed by init-setup.sh
-# Health monitoring (every 5 minutes)
-*/5 * * * * root cd /opt/VaultWarden-OCI-Minimal && ./tools/monitor.sh --silent
-
-# Daily database backup (1:00 AM)
-0 1 * * * root cd /opt/VaultWarden-OCI-Minimal && ./tools/db-backup.sh
-
-# Weekly full backup (Sunday 12:00 AM)
-0 0 * * 0 root cd /opt/VaultWarden-OCI-Minimal && ./tools/create-full-backup.sh
-
-# Weekly database optimization (Monday 2:00 AM)
-0 2 * * 1 root cd /opt/VaultWarden-OCI-Minimal && ./tools/sqlite-maintenance.sh -t full
-
-# Daily CloudFlare IP updates (3:00 AM)
-0 3 * * * root cd /opt/VaultWarden-OCI-Minimal && ./tools/update-cloudflare-ips.sh --quiet
-
-# Daily cleanup (4:00 AM)
-0 4 * * * root find /var/lib/*/logs -name "*.log" -size +50M -exec truncate -s 10M {} \\;
-0 4 * * * root find /var/lib/*/backups -name "*.backup*" -mtime +30 -delete
-```
-
-### **SystemD Service Integration**
-
-#### **Service Definition**
-```bash
-# Created by tools/oci-setup.sh
-[Unit]
-Description=VaultWarden-OCI-Minimal Stack
-Documentation=https://github.com/killer23d/VaultWarden-OCI-Minimal
-After=docker.service network-online.target
-Wants=network-online.target
-Requires=docker.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-Restart=on-failure
-RestartSec=30
-TimeoutStartSec=300
-
-# Environment configuration
-EnvironmentFile=-/etc/systemd/system/vaultwarden-oci-minimal.env
-WorkingDirectory=/opt/VaultWarden-OCI-Minimal
-Environment=COMPOSE_PROJECT_NAME=vaultwarden-oci-minimal
-
-# Execution
-ExecStart=/opt/VaultWarden-OCI-Minimal/startup.sh
-ExecStop=/usr/bin/docker compose -f /opt/VaultWarden-OCI-Minimal/docker-compose.yml down
-ExecReload=/bin/kill -HUP $MAINPID
-
-[Install]
-WantedBy=multi-user.target
-```
-
-## 🚨 **Emergency Script Usage**
-
-### **Critical Recovery Procedures**
-
-#### **Emergency Service Recovery**
-```bash
-# If all services are down
-./startup.sh --force --debug
-
-# If startup fails, try emergency restoration
-./tools/restore.sh --emergency
-
-# If database is corrupted
-./tools/sqlite-maintenance.sh --repair
-
-# If configuration is corrupted
-./tools/restore.sh --config-only /path/to/backup
-```
-
-#### **Emergency Backup Creation**
-```bash
-# Create immediate backup before risky operations
-./tools/create-full-backup.sh --emergency
-
-# Create forensic backup during security incident  
-./tools/create-full-backup.sh --forensic --preserve-logs
-
-# Database-only emergency backup
-./tools/db-backup.sh --emergency --format binary
-```
-
-### **Diagnostic Script Usage**
-
-#### **System Diagnostics**
-```bash
-# Comprehensive system diagnostic
-./tools/monitor.sh --verbose --debug
-
-# Performance issue investigation
-./tools/monitor.sh --performance --detailed
-
-# Security incident analysis
-./tools/monitor.sh --security-check --incident-mode
-
-# Configuration validation
-./startup.sh --validate --debug
-```
-
-## 📋 **Script Development Guidelines**
-
-### **Coding Standards**
-
-#### **Script Structure**
-```bash
-Standard Script Template:
-#!/usr/bin/env bash
-# script-name.sh - Brief description
-# Longer description of purpose and functionality
-
-set -euo pipefail  # Error handling
-
-# Auto-detect paths
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"  # Adjust based on script location
-
-# Source required libraries
-source "$ROOT_DIR/lib/logging.sh"
-source "$ROOT_DIR/lib/config.sh"  # If needed
-
-# Set logging prefix
-_set_log_prefix "script-name"
-
-# Script constants
-readonly SCRIPT_VERSION="1.0.0"
-
-# Main functions
-main() {
-    # Script implementation
-}
-
-# Execute main function if script is run directly
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi
-```
-
-#### **Error Handling**
-```bash
-Error Handling Patterns:
-├── Use set -euo pipefail for strict error handling
-├── Validate all parameters and prerequisites
-├── Use meaningful exit codes (0=success, 1-255=various errors)
-├── Log errors before exiting with _log_error
-└── Provide recovery suggestions in error messages
-
-Example:
-if ! command -v docker >/dev/null 2>&1; then
-    _log_error "Docker not found. Please install Docker first."
-    _log_info "Run: sudo ./tools/init-setup.sh"
-    exit 2
-fi
-```
-
-This comprehensive script reference provides detailed information for effectively using and understanding all scripts in the VaultWarden-OCI-Minimal project."""
+This script reference provides comprehensive documentation for operational management of VaultWarden-OCI-NG. Each script is designed for reliability, security, and ease of use in production environments.
