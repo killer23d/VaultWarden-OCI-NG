@@ -12,9 +12,7 @@ source "$ROOT_DIR/lib/logging.sh"
 source "$ROOT_DIR/lib/config.sh"
 source "$ROOT_DIR/lib/validation.sh"
 source "$ROOT_DIR/lib/system.sh"
-
-# Source new modular libraries
-source "$ROOT_DIR/lib/install.sh"
+source "$ROOT_DIR/lib/deps.sh"
 source "$ROOT_DIR/lib/security.sh"
 source "$ROOT_DIR/lib/cron.sh"
 
@@ -59,6 +57,62 @@ EOF
     esac
 done
 
+# Dependency installation prompt
+_prompt_install_dependencies() {
+    _log_section "Checking System Dependencies"
+    
+    if ! check_required_deps docker curl jq yq age sops fail2ban-client ufw rclone msmtp; then
+        if [[ "$AUTO_MODE" == "true" ]]; then
+            _log_info "Auto mode enabled - installing dependencies automatically..."
+            if ! sudo "$ROOT_DIR/tools/install-deps.sh"; then
+                _log_error "Dependency installation failed in auto mode."
+                exit 1
+            fi
+        else
+            _log_warning "One or more required dependencies are missing."
+            _log_confirm "Would you like to run the dependency installer now? (Requires sudo)" "Y"
+            read -r response
+            response=${response:-Y}
+
+            if [[ "$response" =~ ^[yY][eE][sS]?$ ]]; then
+                _log_info "Running dependency installer..."
+                if ! sudo "$ROOT_DIR/tools/install-deps.sh"; then
+                    _log_error "The dependency installer failed. Please review the output above and resolve the issues."
+                    exit 1
+                fi
+            else
+                _log_error "Dependencies are required to continue. Please run 'sudo ./tools/install-deps.sh' manually."
+                exit 1
+            fi
+        fi
+        
+        # Re-validate after installation
+        if ! check_required_deps docker curl jq yq age sops fail2ban-client ufw rclone msmtp; then
+            _log_error "Some dependencies are still missing after installation. Please check the installer output."
+            exit 1
+        fi
+    fi
+    
+    _log_success "All required dependencies are validated."
+}
+
+# Validate cron job dependencies before scheduling
+_validate_cron_dependencies() {
+    _log_section "Validating Cron Job Dependencies"
+    local missing=()
+    
+    # Check required scripts exist and are executable
+    [[ -x "$ROOT_DIR/tools/backup-monitor.sh" ]] || missing+=("backup-monitor.sh")
+    [[ -x "$ROOT_DIR/tools/update-firewall-rules.sh" ]] || missing+=("update-firewall-rules.sh")
+    
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        _log_error "Missing required scripts for cron jobs: ${missing[*]}"
+        return 1
+    fi
+    
+    _log_success "All cron job dependencies validated"
+}
+
 # Main initialization workflow
 _init_setup_workflow() {
     _log_header "$PROJECT_NAME - Enhanced Setup with SOPS+Age"
@@ -67,22 +121,24 @@ _init_setup_workflow() {
     _auto_fix_script_permissions
     _validate_system_requirements
     
-    # Calls to modular libraries
-    install_system_packages "$AUTO_MODE"
-    install_sops_age_tools
+    # Install dependencies with user prompt or auto mode
+    _prompt_install_dependencies
     
     _setup_age_encryption
     _setup_docker_environment
     
-    # Calls to modular libraries
+    # Configure security
     configure_system_security "$AUTO_MODE"
     
     _generate_initial_configuration
     _create_initial_secrets_file
     _create_system_structure
     
-    # Calls to modular libraries
-    configure_cloudflare_fail2ban
+    # Configure hybrid fail2ban
+    configure_hybrid_fail2ban
+    
+    # Validate cron dependencies and set up automated tasks
+    _validate_cron_dependencies
     setup_cron_jobs "$AUTO_MODE"
     
     _validate_setup_completion
@@ -245,6 +301,7 @@ _display_next_steps() {
     _log_numbered_item 5 "🔍 Validate system health: ./tools/check-health.sh"
     local domain; domain=$(grep "DOMAIN=" "$CONFIG_FILE" | cut -d'=' -f2)
     _log_numbered_item 6 "🌐 Access VaultWarden: $domain"
+    _log_numbered_item 7 "📅 Automated backups and updates are now scheduled via cron"
     echo; _log_error "🚨 REMINDER: Backup your Age private key NOW!"
 }
 
