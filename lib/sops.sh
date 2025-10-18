@@ -45,7 +45,6 @@ init_sops_environment() {
 validate_sops_environment() {
     _log_debug "Validating SOPS environment..."
     local errors=0
-
     # Check for required commands
     if ! command -v sops >/dev/null 2>&1; then
         _log_error "SOPS command not found"
@@ -53,14 +52,12 @@ validate_sops_environment() {
     else
         _log_success "SOPS command available"
     fi
-
     if ! command -v age >/dev/null 2>&1; then
         _log_error "Age command not found"
         ((errors++))
     else
         _log_success "Age command available"
     fi
-
     # Check for SOPS configuration
     if [[ ! -f "$SOPS_CONFIG" ]]; then
         _log_error "SOPS configuration not found: $SOPS_CONFIG"
@@ -76,7 +73,6 @@ validate_sops_environment() {
             _log_success "SOPS configuration has valid syntax"
         fi
     fi
-
     # Check for Age private key
     if [[ ! -f "$AGE_KEY_FILE" ]]; then
         _log_error "Age private key not found: $AGE_KEY_FILE"
@@ -93,7 +89,6 @@ validate_sops_environment() {
             _log_success "Age key has secure permissions (600)"
         fi
     fi
-
     # Check for encrypted secrets file
     if [[ ! -f "$SECRETS_FILE" ]]; then
         _log_warning "Encrypted secrets file not found: $SECRETS_FILE"
@@ -109,7 +104,6 @@ validate_sops_environment() {
             _log_success "Secrets file decryption test passed"
         fi
     fi
-
     # Check Docker secrets directory
     if [[ ! -d "$DOCKER_SECRETS_DIR" ]]; then
         _log_info "Docker secrets directory will be created on startup"
@@ -125,7 +119,6 @@ validate_sops_environment() {
             _log_success "Docker secrets directory has secure permissions (700)"
         fi
     fi
-
     # Summary
     if [[ $errors -eq 0 ]]; then
         _log_success "SOPS environment validation passed"
