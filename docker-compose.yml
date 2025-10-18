@@ -55,7 +55,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${VAULTWARDEN_MEMORY_LIMIT:-2G}
+          memory: ${VAULTWARDEN_MEMORY_LIMIT:-1800M}
           cpus: '1.0'
         reservations:
           memory: ${VAULTWARDEN_MEMORY_RESERVATION:-512M}
@@ -93,10 +93,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${CADDY_MEMORY_LIMIT:-512M}
+          memory: ${CADDY_MEMORY_LIMIT:-400M}
           cpus: '0.5'
         reservations:
-          memory: 256M
+          memory: 200M
           cpus: '0.2'
     logging:
       driver: "json-file"
@@ -120,6 +120,11 @@ services:
     container_name: ${CONTAINER_NAME_FAIL2BAN:-${COMPOSE_PROJECT_NAME}_fail2ban}
     restart: unless-stopped
     network_mode: "host"
+    # Enhanced security: Drop all capabilities then add only required ones
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -141,10 +146,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${FAIL2BAN_MEMORY_LIMIT:-256M}
+          memory: ${FAIL2BAN_MEMORY_LIMIT:-200M}
           cpus: '0.25'
         reservations:
-          memory: 128M
+          memory: 100M
           cpus: '0.1'
     logging:
       driver: "json-file"
@@ -186,10 +191,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 200M
           cpus: '0.25'
         reservations:
-          memory: 64M
+          memory: 50M
           cpus: '0.1'
     logging:
       driver: "json-file"
@@ -218,10 +223,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 100M
           cpus: '0.1'
         reservations:
-          memory: 64M
+          memory: 50M
           cpus: '0.05'
     logging:
       driver: "json-file"
