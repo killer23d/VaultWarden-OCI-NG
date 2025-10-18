@@ -1,0 +1,147 @@
+# Git Ignore Rules
+
+# Sensitive configuration files
+settings.json
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
+# Log files and directories
+logs/
+*.log
+*.log.*
+
+# Backup files
+backups/
+*.backup*
+*.bak
+*.old
+*.orig
+*.tmp
+
+# Database files (keep example/template versions)
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+
+# Runtime files and directories
+*.pid
+*.sock
+run/
+tmp/
+
+# Docker volumes and data
+caddy_data/
+caddy_config/
+data/bwdata/
+ddclient/
+
+# State and cache directories
+state/
+cache/
+.cache/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-*
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+temp/
+
+# Environment and local configuration files
+.env
+.env.local
+.env.production
+local.conf
+local.json
+
+# Ignore dynamic fail2ban files, but not all .local files
+fail2ban/db/
+fail2ban/fail2ban.log
+fail2ban/jail.d/00-firewalld.local
+fail2ban/jail.local
+
+# SSL certificates (except examples)
+ssl/
+certificates/
+
+# Monitoring and maintenance artifacts
+monitor-snapshot.txt
+monitor.lock
+maintenance-*.log
+sqlite-maintenance-status
+
+# OCI CLI configuration (if stored locally)
+.oci/
+oci-config
+
+# Node modules (if any JavaScript tools are added)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python cache (if any Python tools are added)
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# Caddy automatic HTTPS certificates
+caddy/data/
+caddy/config/
+
+# Local development overrides
+docker-compose.override.yml
+docker-compose.local.yml
+
+# SOPS+Age Integration - NEW ENTRIES BELOW
+# Age private keys (CRITICAL - never commit these)
+secrets/keys/age-key.txt
+secrets/keys/backup-info.txt
+
+# Docker secrets temporary files
+secrets/.docker_*
+.secrets.docker/
+
+# Temporary decrypted files
+*.decrypted
+secrets/*.tmp
+secrets/temp_*
+
+# Backup directories (if created locally)
+*age-key-backup*/
+
+# SOPS temporary files
+.sops_*
+
+# Editor temporary files in secrets
+secrets/*~
+secrets/.#*
+secrets/#*#
+
+# OS-specific files in secrets directory
+secrets/.DS_Store
+secrets/Thumbs.db
+secrets/desktop.ini
