@@ -14,7 +14,7 @@
     basicauth {
       admin {$ADMIN_BASIC_AUTH_HASH}
     }
-    reverse_proxy vaultwarden:80
+    reverse_proxy vaultwarden:8080
   }
 
   # Main app proxy
