@@ -81,3 +81,5 @@ ports = 80,443
 maxretry = 2
 findtime = 10m
 bantime = 24h
+
+# SSH jail will be appended by configure_hybrid_fail2ban function
