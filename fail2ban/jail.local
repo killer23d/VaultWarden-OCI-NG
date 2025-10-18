@@ -6,9 +6,8 @@ maxretry = 5
 backend = auto
 ignoreip = 127.0.0.1/8 ::1
 
-# This section is dynamically configured by init-setup.sh
-# It will set the appropriate action based on Cloudflare configuration.
-banaction = {{FAIL2BAN_ACTION}}
+# Fixed: Replace template variable with actual action
+banaction = iptables-multiport
 
 # Email notifications (optional - configure SMTP)
 # destemail = admin@yourdomain.com
