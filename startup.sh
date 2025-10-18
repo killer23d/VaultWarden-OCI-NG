@@ -78,40 +78,40 @@ _startup_workflow() {
 # NEW: Load and prepare encrypted secrets
 _load_encrypted_secrets() {
     _log_section "Loading Encrypted Secrets"
-    
+
     # Validate SOPS environment
     if ! command -v sops >/dev/null 2>&1; then
         _log_error "SOPS not found - run ./tools/init-setup.sh"
         return 1
     fi
-    
+
     if [[ ! -f "$AGE_KEY_FILE" ]]; then
         _log_error "Age private key not found: $AGE_KEY_FILE"
         _log_info "Run: ./tools/init-setup.sh"
         return 1
     fi
-    
+
     if [[ ! -f "$SECRETS_FILE" ]]; then
         _log_error "Encrypted secrets file not found: $SECRETS_FILE"
         _log_info "Create with: ./tools/edit-secrets.sh"
         return 1
     fi
-    
+
     # Test decryption capability
     if ! sops -d "$SECRETS_FILE" >/dev/null 2>&1; then
         _log_error "Cannot decrypt secrets file - check Age key"
         return 1
     fi
-    
+
     _log_success "Encrypted secrets accessible"
-    
+
     # Create Docker secrets directory
     local docker_secrets_dir="$ROOT_DIR/secrets/.docker_secrets"
     _create_directory_secure "$docker_secrets_dir" "700"
-    
+
     # Extract secrets to individual files for Docker secrets
     _extract_docker_secrets
-    
+
     _log_success "Docker secrets prepared"
 }
 
@@ -119,17 +119,17 @@ _load_encrypted_secrets() {
 _extract_docker_secrets() {
     local docker_secrets_dir="$ROOT_DIR/secrets/.docker_secrets"
     local decrypted_secrets
-    
+
     # Get decrypted secrets
     decrypted_secrets=$(sops -d "$SECRETS_FILE" 2>/dev/null)
-    
+
     # Extract each secret to individual file
     local secrets=("admin_token" "smtp_password" "backup_passphrase" "push_installation_key" "cloudflare_api_token")
-    
+
     for secret in "${secrets[@]}"; do
         local secret_value
-        secret_value=$(echo "$decrypted_secrets" | yq eval ".$secret // \"\"" - 2>/dev/null)
-        
+        secret_value=$(echo "$decrypted_secrets" | yq eval ".$secret // \"\""  - 2>/dev/null)
+
         if [[ -n "$secret_value" ]] && [[ "$secret_value" != "null" ]]; then
             echo -n "$secret_value" > "$docker_secrets_dir/$secret"
             chmod 600 "$docker_secrets_dir/$secret"
@@ -146,7 +146,7 @@ _extract_docker_secrets() {
 # ENHANCED: Validate startup prerequisites including SOPS
 _validate_startup_prerequisites() {
     _log_info "Validating startup prerequisites..."
-    
+
     _validate_docker_daemon
     _validate_compose_file "$COMPOSE_FILE"
     _validate_network_connectivity
@@ -154,29 +154,29 @@ _validate_startup_prerequisites() {
     # Check for configuration existence
     local has_config=false
     local has_secrets=false
-    
-    if [[ -f "$ROOT_DIR/settings.json" ]]; then
+
+    if [[ -f "$ROOT_DIR/settings.json" ]] || [[ -f "$ROOT_DIR/settings.env" ]]; then
         has_config=true
     fi
-    
+
     if [[ -f "$SECRETS_FILE" ]] && [[ -f "$AGE_KEY_FILE" ]]; then
         has_secrets=true
     fi
-    
+
     # Check for OCI Vault fallback
     if [[ -z "${OCI_SECRET_OCID:-}" ]]; then
         local oci_fallback=false
     else
         local oci_fallback=true
     fi
-    
+
     if [[ "$has_config" == "false" ]] && [[ "$has_secrets" == "false" ]] && [[ "$oci_fallback" == "false" ]]; then
         _log_error "No configuration found."
         _log_info "This appears to be a fresh installation."
         _log_info "Please run: sudo ./tools/init-setup.sh"
         return 1
     fi
-    
+
     if [[ "$has_secrets" == "true" ]]; then
         _log_success "SOPS+Age configuration detected"
     elif [[ "$has_config" == "true" ]]; then
@@ -194,10 +194,18 @@ _prepare_runtime_environment() {
         _create_directory_secure "$dir" "755"
     done
 
-    # Set correct permissions for secrets directory
+    # Enhanced: Set correct permissions for secrets directory and clean up old secrets
     if [[ -d "$ROOT_DIR/secrets/.docker_secrets" ]]; then
         chmod 700 "$ROOT_DIR/secrets/.docker_secrets"
-        find "$ROOT_DIR/secrets/.docker_secrets" -type f -exec chmod 600 {} \;
+
+        # Clean up old secrets (older than 30 minutes for tighter security)
+        find "$ROOT_DIR/secrets/.docker_secrets" -type f -mmin +30 -exec rm -f {} \; 2>/dev/null || true
+
+        # Set secure permissions on all current secrets
+        find "$ROOT_DIR/secrets/.docker_secrets" -type f -exec chmod 600 {} \; 2>/dev/null || true
+        find "$ROOT_DIR/secrets/.docker_secrets" -type d -exec chmod 700 {} \; 2>/dev/null || true
+
+        _log_debug "Docker secrets directory secured and cleaned"
     fi
 
     local caddy_placeholder="$ROOT_DIR/caddy/cloudflare-ips.caddy"
@@ -222,22 +230,23 @@ _prepare_runtime_environment() {
         chmod 600 "$ROOT_DIR/settings.json"
     fi
 
+    if [[ -f "$ROOT_DIR/settings.env" ]]; then
+        chmod 600 "$ROOT_DIR/settings.env"
+    fi
+
     # Export dynamic paths for docker-compose
     export PROJECT_STATE_DIR
     export COMPOSE_PROJECT_NAME="$PROJECT_NAME"
 
-    # Calculate and export dynamic subnet
-    _log_debug "Calculating dynamic Docker subnet..."
-    local subnet_octet
-    subnet_octet=$(echo "${COMPOSE_PROJECT_NAME:-vaultwarden}" | md5sum | tr -dc '0-9' | cut -c1-3 | sed 's/^0*//' | awk '{print (($1 % 240) + 16)}')
-    export DOCKER_SUBNET="172.${subnet_octet}.0.0/24"
-    _log_info "Using dynamic subnet: $DOCKER_SUBNET"
-    
+    # Simplified: Use static subnet for better reliability
+    export DOCKER_SUBNET="172.20.0.0/24"
+    _log_info "Using Docker subnet: $DOCKER_SUBNET"
+
     # Export secrets directory for Docker Compose
     export DOCKER_SECRETS_DIR="$ROOT_DIR/secrets/.docker_secrets"
 }
 
-# ENHANCED: Execute pre-startup tasks with secrets support
+# ENHANCED: Execute pre-startup tasks with secrets support and improved cleanup
 _execute_pre_startup_tasks() {
     _log_info "Executing pre-startup tasks..."
 
@@ -266,10 +275,16 @@ _execute_pre_startup_tasks() {
     fi
 
     _cleanup_orphaned_containers
-    
-    # Clean up any stale secret files older than 1 hour
+
+    # Enhanced: Clean up any stale secret files and secure log permissions
     if [[ -d "$ROOT_DIR/secrets/.docker_secrets" ]]; then
-        find "$ROOT_DIR/secrets/.docker_secrets" -type f -mmin +60 -exec rm -f {} \; 2>/dev/null || true
+        find "$ROOT_DIR/secrets/.docker_secrets" -type f -mmin +30 -exec rm -f {} \; 2>/dev/null || true
+    fi
+
+    # Set secure permissions on log directories
+    if [[ -d "$PROJECT_STATE_DIR/logs" ]]; then
+        find "$PROJECT_STATE_DIR/logs" -type d -exec chmod 750 {} \; 2>/dev/null || true
+        find "$PROJECT_STATE_DIR/logs" -type f -exec chmod 640 {} \; 2>/dev/null || true
     fi
 }
 
@@ -303,7 +318,7 @@ _validate_service_health() {
         if [[ $i -eq $max_retries ]]; then
             _log_error "VaultWarden failed to become healthy on the first attempt."
             _log_info "Attempting a one-time automatic restart of the 'vaultwarden' service..."
-            
+
             if docker compose restart vaultwarden &>/dev/null; then
                 _log_info "Restart command sent. Waiting for service to become healthy again..."
                 sleep 20 
@@ -368,7 +383,7 @@ _display_service_info() {
     echo
     _log_info "Project Paths:"
     _print_key_value "Data" "$PROJECT_STATE_DIR"
-    _print_key_value "Config" "$ROOT_DIR/settings.json"
+    _print_key_value "Config" "$ROOT_DIR/settings.env"
     _print_key_value "Secrets" "$SECRETS_FILE"
     _print_key_value "Logs" "$PROJECT_STATE_DIR/logs"
 }
