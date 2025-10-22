@@ -1,0 +1,11 @@
+# ddclient configuration template for VaultWarden-OCI-NG
+# This file is rendered by tools/render-ddclient-conf.sh
+
+daemon=300
+protocol=${DDCLIENT_PROTOCOL}
+use=web, web=https://www.cloudflare.com/cdn-cgi/trace, web-skip='ip='
+server=api.cloudflare.com/client/v4
+login=${DDCLIENT_LOGIN}
+password=${CLOUDFLARE_API_TOKEN}
+zone=${DDCLIENT_ZONE}
+${DDCLIENT_HOST}
