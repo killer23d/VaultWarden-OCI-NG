@@ -12,6 +12,10 @@
 
 # Main site configuration for your domain (variable {$DOMAIN} comes from .env, no protocol)
 https://{$DOMAIN} {
+    # P3 FIX: Define named matchers at the top for better readability
+    @admin path /admin*
+    @notifications path /notifications/hub*
+
     # Trust proxies matching the imported Cloudflare IP ranges
     # This ensures X-Real-IP etc. are correctly populated from Cloudflare headers
     trusted_proxies @cloudflare
@@ -21,31 +25,23 @@ https://{$DOMAIN} {
 
     # Secure the /admin endpoint with Basic Authentication and Rate Limiting
     # The hash {$ADMIN_BASIC_AUTH_HASH} is provided via environment variable from secrets
-    @admin path /admin*
     rate_limit @admin 5r/m
     basicauth @admin {
         admin {$ADMIN_BASIC_AUTH_HASH}
     }
-    handle @admin {
-        reverse_proxy vaultwarden:8080 {
-            header_up X-Real-IP {http.request.header.CF-Connecting-IP} # Pass Cloudflare IP
-        }
+    reverse_proxy @admin vaultwarden:8080 {
+        header_up X-Real-IP {http.request.header.CF-Connecting-IP} # Pass Cloudflare IP
     }
 
     # Notifications endpoint for Bitwarden clients (WebSockets)
     # Vaultwarden runs websockets on port 3012 by default when WEBSOCKET_ENABLED=true
-    @notifications path /notifications/hub*
-    handle @notifications {
-        reverse_proxy vaultwarden:3012 {
-             header_up X-Real-IP {http.request.header.CF-Connecting-IP} # Pass Cloudflare IP
-        }
+    reverse_proxy @notifications vaultwarden:3012 {
+        header_up X-Real-IP {http.request.header.CF-Connecting-IP} # Pass Cloudflare IP
     }
 
     # Main application proxy (all other requests)
-    handle {
-        reverse_proxy vaultwarden:8080 {
-            header_up X-Real-IP {http.request.header.CF-Connecting-IP} # Pass Cloudflare IP
-        }
+    reverse_proxy vaultwarden:8080 {
+        header_up X-Real-IP {http.request.header.CF-Connecting-IP} # Pass Cloudflare IP
     }
 
     # Logging configuration (consistent with Docker logging where possible)
