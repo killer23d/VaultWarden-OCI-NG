@@ -1,0 +1,46 @@
+# Generated configuration files (never commit)
+.sops.yaml
+settings.env
+
+# Age private keys (CRITICAL - never commit)
+secrets/keys/age-key.txt
+secrets/keys/*.txt
+secrets/keys/*.key
+
+# Docker secrets directory
+secrets/.docker_secrets/
+secrets/.docker_secrets/*
+
+# Temporary files
+/tmp/vw_admin_pass.tmp
+*.tmp
+.env.local
+
+# Runtime state
+.setup-complete
+*.pid
+*.log
+
+# Backup files
+*.backup
+*.backup.*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker volumes and local data
+data/
+logs/
+backups/
+
+# Local development overrides
+docker-compose.override.yml
+docker-compose.local.yml
