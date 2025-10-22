@@ -37,7 +37,8 @@ done
 # Set script-specific log prefix
 _set_log_prefix "$(basename "$0" .sh)"
 
-# --- Rest of script follows ---
+# P1 FIX: Add standardized error handling
+trap 'log_error "Script failed at line $LINENO in $(basename "${BASH_SOURCE[0]}")"; exit 1' ERR
 
 # --- Configuration & Flags ---
 # Default values for flags (moved here, previously defined before sourcing helpers)
@@ -119,7 +120,6 @@ stop_stack() {
     return 0
 }
 
-
 # --- Main Execution ---
 main() {
 
@@ -172,7 +172,6 @@ main() {
          fi
     fi
 
-
     # 5. Handle Force Restart (Stop existing containers)
     if [[ "$FORCE_RESTART" == "true" ]]; then
         log_info "Force restart requested. Stopping existing containers..."
@@ -191,4 +190,4 @@ main() {
 }
 
 # Execute main function
-main
+main "$@"
