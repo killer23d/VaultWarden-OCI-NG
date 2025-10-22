@@ -1,0 +1,20 @@
+# SOPS configuration for VaultWarden Age encryption
+# This file configures SOPS to use Age encryption for all secret files
+
+creation_rules:
+  # Encrypt all YAML files in secrets/ directory with Age
+  - path_regex: secrets/.*\.yaml$
+    age: >-
+      ${AGE_PUBLIC_KEY}
+
+  # Fallback rule for any other files that might need encryption
+  - path_regex: secrets/.*
+    age: >-
+      ${AGE_PUBLIC_KEY}
+
+# Global settings
+encrypted_regex: '^(data|stringData|admin_token|smtp_password|backup_passphrase|push_installation_key|cloudflare_api_token)$'
+
+# Format settings
+format: yaml
+indent: 2
