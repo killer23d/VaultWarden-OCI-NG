@@ -63,12 +63,11 @@ else
     log_warn "Optional library not found: lib/system.sh. Some system info might be missing from docs."
 fi
 
-
 # Set script-specific log prefix
 _set_log_prefix "$(basename "$0" .sh)"
 
-# --- Rest of script follows ---
-
+# Add standardized error handling
+trap 'log_error "Script failed at line $LINENO in $(basename "${BASH_SOURCE[0]}")"; cleanup_staging; exit 1' ERR
 
 # --- Configuration ---
 readonly EMERGENCY_KIT_STAGING_DIR="/tmp/emergency-kit-staging.$$" # Unique temp dir
@@ -118,23 +117,28 @@ parse_arguments() {
             --auto-password) AUTO_PASSWORD=true; shift ;;
             --test-mode) TEST_MODE=true; shift ;;
             --output-file)
-                OUTPUT_FILE="$2"
-                 # Basic check: needs directory or absolute path, or just filename (save to current dir)
-                 local out_dir
-                 out_dir=$(dirname "$OUTPUT_FILE")
-                 # Check if dirname returns '.' (current dir) or an actual path
-                 if [[ "$out_dir" != "." && "$out_dir" != /* ]]; then # Relative path with directory specified
-                     out_dir="$PROJECT_ROOT/$out_dir" # Resolve relative to project root
-                     OUTPUT_FILE="$out_dir/$(basename "$OUTPUT_FILE")" # Rebuild full path
-                 elif [[ "$out_dir" == "." ]]; then # Just filename, save to project root
-                     OUTPUT_FILE="$PROJECT_ROOT/$OUTPUT_FILE"
-                 fi
-                 # Ensure output dir can be created later by checking parent
-                 out_dir=$(dirname "$OUTPUT_FILE")
-                  if ! mkdir -p "$out_dir" 2>/dev/null && ! [[ -d "$out_dir" ]]; then
-                       log_error "Cannot create or access output directory: $out_dir"
-                       exit 1
-                  fi
+                # P1 FIX: Simplified path resolution logic
+                if [[ "$2" == /* ]]; then
+                    OUTPUT_FILE="$2"  # Already absolute path
+                else
+                    OUTPUT_FILE="$PROJECT_ROOT/$2"  # Make relative paths absolute to project root
+                fi
+
+                # Ensure parent directory exists or can be created
+                local parent_dir
+                parent_dir=$(dirname "$OUTPUT_FILE")
+                if ! mkdir -p "$parent_dir" 2>/dev/null; then
+                    log_error "Cannot create or access output directory: $parent_dir"
+                    exit 1
+                fi
+
+                # Verify we can write to the target location
+                if ! touch "$OUTPUT_FILE" 2>/dev/null; then
+                    log_error "Cannot write to output file location: $OUTPUT_FILE"
+                    exit 1
+                fi
+                rm -f "$OUTPUT_FILE" # Remove test file
+
                 shift 2
                 ;;
             --debug) export DEBUG=true; shift ;; # Enable debug logging via environment variable
@@ -163,7 +167,6 @@ cleanup_staging() {
 # Register cleanup
 trap cleanup_staging EXIT HUP INT TERM
 
-
 # --- Prerequisite Validation ---
 validate_prerequisites() {
     _log_section "Validating Prerequisites"
@@ -179,14 +182,13 @@ validate_prerequisites() {
     if "$check_cmd_func" yq > /dev/null; then required_commands+=("yq"); else log_warn "yq not found, secrets parsing might be less reliable."; fi
     if "$check_cmd_func" ip > /dev/null; then required_commands+=("ip"); else log_warn "ip command not found, network info will be limited."; fi
 
-
     for cmd in "${required_commands[@]}"; do
         if ! "$check_cmd_func" "$cmd" &> /dev/null; then
             log_error "Required command not found: $cmd"
              # Specific help for yq/age/shred if missing
-             [[ "$cmd" == "yq" ]] && log_info "Try installing yq via 'sudo apt install yq' or manually."
-             [[ "$cmd" == "age" ]] && log_info "Try installing age via 'sudo apt install age'."
-             [[ "$cmd" == "shred" ]] && log_info "shred command required. Install via 'sudo apt install coreutils'."
+             [[ "$cmd" == "yq" ]] && log_info "Try installing yq via '"'"'sudo apt install yq'"'"' or manually."
+             [[ "$cmd" == "age" ]] && log_info "Try installing age via '"'"'sudo apt install age'"'"'."
+             [[ "$cmd" == "shred" ]] && log_info "shred command required. Install via '"'"'sudo apt install coreutils'"'"'."
             ((errors++))
         fi
     done
@@ -199,10 +201,10 @@ validate_prerequisites() {
 
     # Check secrets file (Warn if missing, but allow continuation for init-setup case)
     if [[ ! -f "$SECRETS_FILE" ]]; then
-        log_warn "'$SECRETS_FILE' not found. Kit will be incomplete (missing application secrets)."
+        log_warn "'"'"'$SECRETS_FILE'"'"' not found. Kit will be incomplete (missing application secrets)."
         # Do not increment errors here, handle failure later if decryption needed
     elif [[ ! -r "$SECRETS_FILE" ]]; then
-         log_error "Cannot read secrets file '$SECRETS_FILE'."
+         log_error "Cannot read secrets file '"'"'$SECRETS_FILE'"'"'."
          ((errors++))
     fi
 
@@ -210,7 +212,6 @@ validate_prerequisites() {
      if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
          log_warn ".env file not found. Kit configuration section might be incomplete."
      fi
-
 
     if [[ $errors -gt 0 ]]; then
         log_error "Prerequisite validation failed with $errors critical error(s)."
@@ -248,19 +249,19 @@ generate_secrets_content() {
 
     # Decrypt secrets.yaml
     if [[ -f "$SECRETS_FILE" ]]; then
-        log_info "Decrypting '$SECRETS_FILE' to staging area..."
+        log_info "Decrypting '"'"'$SECRETS_FILE'"'"' to staging area..."
         # Decryption attempt
         if ! age -d -i "$AGE_KEY_FILE" "$SECRETS_FILE" > "$temp_decrypted_secrets" 2>/dev/null; then
-            log_error "Failed to decrypt secrets file '$SECRETS_FILE'. Check Age key and file."
+            log_error "Failed to decrypt secrets file '"'"'$SECRETS_FILE'"'"'. Check Age key and file."
             ((errors++))
         else
             chmod 600 "$temp_decrypted_secrets" # Secure the decrypted file
             log_success "Secrets decrypted to staging area (sensitive)."
         fi
     else
-         log_warn "'$SECRETS_FILE' not found. Kit will not contain application secrets."
+         log_warn "'"'"'$SECRETS_FILE'"'"' not found. Kit will not contain application secrets."
          # Create a placeholder file to avoid errors later
-         echo "# Secrets file '$SECRETS_FILE' was not found during kit creation." > "$temp_decrypted_secrets"
+         echo "# Secrets file '"'"'$SECRETS_FILE'"'"' was not found during kit creation." > "$temp_decrypted_secrets"
          chmod 600 "$temp_decrypted_secrets"
     fi
 
@@ -283,7 +284,6 @@ generate_secrets_content() {
          fi
     fi
      chmod 644 "$dest_pubkey_file" 2>/dev/null || true # Ensure readable
-
 
     if [[ $errors -eq 0 ]]; then
         log_success "Secrets content generated successfully."
@@ -325,7 +325,7 @@ generate_configuration_content() {
 
         if [[ -f "$source_file" ]]; then
              # Ensure destination directory exists
-             mkdir -p "$(dirname "$dest_path")" || { log_error "Cannot create dir for '$dest_path'"; ((errors++)); continue; }
+             mkdir -p "$(dirname "$dest_path")" || { log_error "Cannot create dir for '"'"'$dest_path'"'"'"; ((errors++)); continue; }
              if cp "$source_file" "$dest_path"; then
                   _log_debug "Copied config: $relative_path"
              else
@@ -370,28 +370,27 @@ generate_recovery_content() {
          clean_domain_val="${clean_domain_val%/}"
     fi
 
-
     # Create recovery guide
     log_info "Generating recovery-guide.md..."
     # Use cat with HERE document, ensure correct variable expansion
     cat > "$recovery_dir/recovery-guide.md" <<- EOF
 # VaultWarden-OCI-NG Emergency Recovery Guide (from Kit)
 
-**Generated:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+**Generated:** $(date -u '"'"'+%Y-%m-%d %H:%M:%S UTC'"'"')
 **From Server:** $(hostname -f 2>/dev/null || hostname)
 **Project Version (Git):** $(git rev-parse --short HEAD 2>/dev/null || echo "N/A")
 
 ## 1. Prerequisites
 * A new **Ubuntu 24.04 LTS** server instance.
-* This Emergency Access Kit archive (\`.tar.gz.age\`), decrypted using your password.
-* Your backed-up Age private key (\`age-key.txt\` - **must be restored from YOUR secure offline backup**). A copy is included in the \`secrets/\` directory of this kit for reference only.
+* This Emergency Access Kit archive (\\`.tar.gz.age\\`), decrypted using your password.
+* Your backed-up Age private key (\\`age-key.txt\\` - **must be restored from YOUR secure offline backup**). A copy is included in the \\`secrets/\\` directory of this kit for reference only.
 * Internet access on the new server.
-* DNS configured to point your domain (\`${clean_domain_val}\`) to the new server's IP address.
+* DNS configured to point your domain (\\`${clean_domain_val}\\`) to the new server'"'"'s IP address.
 
 ## 2. Server Preparation
 Log in to the new server via SSH.
 
-\`\`\`bash
+\\`\\`\\`bash
 # Update system and install essential tools
 sudo apt update && sudo apt upgrade -y
 # Ensure git, age, curl, wget, tar, gzip, coreutils (for shred) are installed
@@ -401,19 +400,19 @@ sudo apt install -y git age curl wget tar gzip coreutils
 # ssh-keygen ... ; ssh-copy-id your_user@new-server-ip
 # sudo nano /etc/ssh/sshd_config # Set PasswordAuthentication no
 # sudo systemctl reload sshd
-\`\`\`
+\\`\\`\\`
 
 ## 3. Clone Repository & Restore Kit Contents
-\`\`\`bash
+\\`\\`\\`bash
 # Clone the project repository into /opt (or preferred location)
 cd /opt
 sudo git clone https://github.com/killer23d/VaultWarden-OCI-NG
 # Assign ownership to your user for easier management initially
-sudo chown -R \$USER:\$USER VaultWarden-OCI-NG
+sudo chown -R \\$USER:\\$USER VaultWarden-OCI-NG
 cd VaultWarden-OCI-NG
 
 # *** IMPORTANT: Copy extracted kit contents ***
-# Replace '/path/to/extracted/kit/' with the actual path where you extracted this kit archive.
+# Replace '"'"'/path/to/extracted/kit/'"'"' with the actual path where you extracted this kit archive.
 
 # Restore Age Key (Use YOUR secure backup copy primarily)
 echo "Restoring Age key..."
@@ -439,7 +438,7 @@ echo "Re-encrypting secrets..."
 # Verify age-keygen command works with the restored key
 if ! age-keygen -y secrets/keys/age-key.txt > /dev/null; then
     echo "ERROR: Restored Age key appears invalid or inaccessible! Cannot re-encrypt secrets."
-    echo "Ensure 'secrets/keys/age-key.txt' is correct and has 600 permissions."
+    echo "Ensure '"'"'secrets/keys/age-key.txt'"'"' is correct and has 600 permissions."
     # Securely delete temp file before exiting
     shred -u secrets/secrets-temp.yaml 2>/dev/null || rm -f secrets/secrets-temp.yaml
     exit 1
@@ -466,38 +465,38 @@ echo "Configuration files restored."
 
 # Set script permissions (crucial!)
 chmod +x startup.sh tools/*.sh lib/*.sh
-\`\`\`
+\\`\\`\\`
 
 ## 4. Install Dependencies
-\`\`\`bash
+\\`\\`\\`bash
 echo "Installing system dependencies..."
 # Use sudo, run non-interactively
 sudo ./tools/install-deps.sh --auto
-\`\`\`
+\\`\\`\\`
 
 ## 5. Initialize System (Non-destructively)
 This ensures directories, firewall etc., are set up based on restored config.
-Use \`--restore-mode\` to skip key/config generation if files exist. Domain/email needed if .env restore failed.
-\`\`\`bash
+Use \\`--restore-mode\\` to skip key/config generation if files exist. Domain/email needed if .env restore failed.
+\\`\\`\\`bash
 echo "Running initial setup (restore mode)..."
 # Use domain/email from restored .env if possible
-restored_domain=\$(grep '^DOMAIN=' .env 2>/dev/null | cut -d= -f2 || echo '${clean_domain_val}')
-restored_email=\$(grep '^ADMIN_EMAIL=' .env 2>/dev/null | cut -d= -f2 || echo '${admin_email_val}')
+restored_domain=\\$(grep '"'"'^DOMAIN='"'"' .env 2>/dev/null | cut -d= -f2 || echo '"'"'${clean_domain_val}'"'"')
+restored_email=\\$(grep '"'"'^ADMIN_EMAIL='"'"' .env 2>/dev/null | cut -d= -f2 || echo '"'"'${admin_email_val}'"'"')
 # Requires sudo
-sudo ./tools/init-setup.sh --restore-mode --domain "\$restored_domain" --email "\$restored_email"
+sudo ./tools/init-setup.sh --restore-mode --domain "\\$restored_domain" --email "\\$restored_email"
 # Expect warnings about existing files/keys - this is normal in restore mode.
-\`\`\`
+\\`\\`\\`
 
 ## 6. Start Services
-\`\`\`bash
+\\`\\`\\`bash
 echo "Starting VaultWarden stack..."
 # Run as your user (assuming user is in docker group from install-deps)
 ./startup.sh
 # This should succeed if all previous steps worked
-\`\`\`
+\\`\\`\\`
 
 ## 7. Validate Recovery
-\`\`\`bash
+\\`\\`\\`bash
 echo "Running health check (wait ~30-60s first for services to start)..."
 sleep 60
 ./tools/check-health.sh --comprehensive
@@ -505,32 +504,31 @@ sleep 60
 # Access your Vaultwarden instance via browser at: https://${clean_domain_val}
 # Log in with your previous credentials and verify data.
 # Check the admin panel at: https://${clean_domain_val}/admin (using ADMIN_TOKEN/password from restored secrets)
-\`\`\`
+\\`\\`\\`
 
 ## 8. Post-Recovery Steps (HIGHLY Recommended)
-* **Generate a NEW Emergency Kit:** \`./tools/create-emergency-kit.sh\` (Use a NEW password). Store it securely offline.
-* **Securely Backup the NEW Age Key:** Manually copy the new \`secrets/keys/age-key.txt\` to your secure offline locations. **Delete the old key backup.**
-* **Test Backup Creation:** \`./tools/backup-monitor.sh --db-only\`
-* **Verify Cron Jobs:** \`sudo crontab -l\` (If missing/incorrect, re-run \`sudo ./tools/init-setup.sh --restore-mode ...\` or manually setup via \`lib/cron.sh\`).
-* **Rotate Sensitive Secrets:** Consider changing ADMIN\_TOKEN and possibly SMTP password using \`./tools/edit-secrets.sh\`.
+* **Generate a NEW Emergency Kit:** \\`./tools/create-emergency-kit.sh\\` (Use a NEW password). Store it securely offline.
+* **Securely Backup the NEW Age Key:** Manually copy the new \\`secrets/keys/age-key.txt\\` to your secure offline locations. **Delete the old key backup.**
+* **Test Backup Creation:** \\`./tools/backup-monitor.sh --db-only\\`
+* **Verify Cron Jobs:** \\`sudo crontab -l\\` (If missing/incorrect, re-run \\`sudo ./tools/init-setup.sh --restore-mode ...\\` or manually setup via \\`lib/cron.sh\\`).
+* **Rotate Sensitive Secrets:** Consider changing ADMIN\_TOKEN and possibly SMTP password using \\`./tools/edit-secrets.sh\\`.
 
 ## Troubleshooting
-* **Decryption Fails (Step 3 - age command):** Ensure you restored the correct \`age-key.txt\` from your secure backup and it has correct permissions (600).
-* **Encryption Fails (Step 3 - sops command):** Check \`.sops.yaml\` is present and correct. Verify the Age key again.
-* **Services Fail to Start (Step 6):** Check logs: \`docker compose logs\`, \`${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/logs/system.log\`. Ensure secrets re-encrypted correctly. Check Docker status: \`sudo systemctl status docker\`. Ensure correct ownership/permissions on \`${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/data\`.
-* **Cannot Access Web UI (Step 7):** Verify DNS points to the new server's IP. Check firewall: \`sudo ufw status\`. Check Caddy logs: \`docker compose logs caddy\`.
-* **Data Missing:** Ensure the kit was generated *after* the data was last saved. If data loss occurred before the kit, you may need to restore from a standard backup (\`.tar.gz.age\` or \`.sqlite3.gz.age\`) instead using \`./tools/backup-recovery.sh\`.
+* **Decryption Fails (Step 3 - age command):** Ensure you restored the correct \\`age-key.txt\\` from your secure backup and it has correct permissions (600).
+* **Encryption Fails (Step 3 - sops command):** Check \\`.sops.yaml\\` is present and correct. Verify the Age key again.
+* **Services Fail to Start (Step 6):** Check logs: \\`docker compose logs\\`, \\`${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/logs/system.log\\`. Ensure secrets re-encrypted correctly. Check Docker status: \\`sudo systemctl status docker\\`. Ensure correct ownership/permissions on \\`${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/data\\`.
+* **Cannot Access Web UI (Step 7):** Verify DNS points to the new server'"'"'s IP. Check firewall: \\`sudo ufw status\\`. Check Caddy logs: \\`docker compose logs caddy\\`.
+* **Data Missing:** Ensure the kit was generated *after* the data was last saved. If data loss occurred before the kit, you may need to restore from a standard backup (\\`.tar.gz.age\\` or \\`.sqlite3.gz.age\\`) instead using \\`./tools/backup-recovery.sh\\`.
 
 EOF
     if [[ $? -eq 0 ]]; then log_success "Recovery guide generated."; else log_error "Failed to generate recovery guide."; ((errors++)); fi
-
 
     # Generate network configuration summary
     log_info "Generating network-config.txt..."
     # Use subshell to capture output, handle errors gracefully
     network_config_content=$(
         echo "# Network Configuration Summary (at time of kit creation)"
-        echo "# Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "# Generated: $(date -u '"'"'+%Y-%m-%d %H:%M:%S UTC'"'"')"
         echo
         echo "## VaultWarden Configuration (from loaded config)"
         echo "Domain (from .env): ${domain_val:-Not configured}"
@@ -547,7 +545,7 @@ EOF
         echo "Detected Public IP: $public_ip"
         # Check for ip command before attempting private IP fetch
         if command -v ip >/dev/null; then
-             private_ips=$(ip -4 addr show scope global | grep -oP 'inet \K[\d.]+' | tr '\n' ' ' | sed 's/ $//' || echo "Unavailable") # Remove trailing space
+             private_ips=$(ip -4 addr show scope global | grep -oP '"'"'inet \K[\d.]+'"'"' | tr '"'"'\n'"'"' '"'"' '"'"' | sed '"'"'s/ $//'"'"' || echo "Unavailable") # Remove trailing space
         fi
         echo "Detected Private IP(s): $private_ips"
         echo
@@ -559,7 +557,7 @@ EOF
              [[ $EUID -ne 0 ]] && sudo_cmd="sudo "
              ${sudo_cmd}ufw status verbose || echo "# UFW status command failed."
         else
-             echo "# UFW status requires 'ufw' command and root/sudo privileges."
+             echo "# UFW status requires '"'"'ufw'"'"' command and root/sudo privileges."
         fi
     )
     if echo "$network_config_content" > "$recovery_dir/network-config.txt"; then
@@ -594,7 +592,7 @@ generate_verification_content() {
          commit_hash=$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo "N/A")
      fi
      metadata_content=$(printf "Emergency Access Kit Creation Details\n-------------------------------------\nTimestamp: %s\nSource Server: %s\nProject Git Commit: %s\nCreated By: %s\nKit Version: 1.2\n" \
-         "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" \
+         "$(date -u '"'"'+%Y-%m-%d %H:%M:%S UTC'"'"')" \
          "$(hostname -f 2>/dev/null || hostname)" \
          "$commit_hash" \
          "$(basename "$0")" # Script name
@@ -608,7 +606,6 @@ generate_verification_content() {
     return $errors
 }
 
-
 # --- Encryption and Packaging ---
 
 get_encryption_password() {
@@ -620,7 +617,7 @@ get_encryption_password() {
              KIT_PASSWORD=$(generate_secure_token 32)
         elif command -v openssl >/dev/null; then
              log_warn "Using openssl rand fallback for password generation."
-             KIT_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
+             KIT_PASSWORD=$(openssl rand -base64 32 | tr -dc '"'"'a-zA-Z0-9'"'"' | head -c 32)
         else
              log_error "Cannot auto-generate password: secure generator (openssl or lib/security) not found."
              return 1 # Indicate failure
@@ -635,7 +632,7 @@ get_encryption_password() {
         # If saving locally, WARN the user about the password
         if [[ -n "$OUTPUT_FILE" ]]; then
              log_warn "AUTO-PASSWORD used with --output-file. Password is: $KIT_PASSWORD"
-             log_warn "STORE THIS PASSWORD SECURELY along with the kit file '$OUTPUT_FILE'!"
+             log_warn "STORE THIS PASSWORD SECURELY along with the kit file '"'"'$OUTPUT_FILE'"'"'!"
         fi
     else
         _log_section "Set Kit Encryption Password"
@@ -693,9 +690,9 @@ create_encrypted_kit() {
     log_info "Output target: $kit_archive_path"
 
     # Define commands
-    # Use tar flags: c=create, z=gzip, f=file (use '-' for stdout), -C=change dir
-    # Exclude leading './' from paths in tar archive for cleaner structure
-    tar_cmd=(tar -czf - -C "$EMERGENCY_KIT_STAGING_DIR" --transform='s,^\./,,' .)
+    # Use tar flags: c=create, z=gzip, f=file (use '"'"'-'"'"' for stdout), -C=change dir
+    # Exclude leading '"'"'./'"'"' from paths in tar archive for cleaner structure
+    tar_cmd=(tar -czf - -C "$EMERGENCY_KIT_STAGING_DIR" --transform='"'"'s,^\./,,'"'"' .)
     # Use age -p for password encryption, redirect password via stdin
     age_cmd=(age -p -o "$kit_archive_path")
 
@@ -729,7 +726,6 @@ create_encrypted_kit() {
     return $exit_code
 }
 
-
 # --- Email Notification ---
 
 send_emergency_kit_email() {
@@ -738,23 +734,22 @@ send_emergency_kit_email() {
 
     kit_filename=$(basename "$kit_file_path")
     kit_size=$(du -h "$kit_file_path" | cut -f1)
-    subject="🚨 VaultWarden Emergency Access Kit - $(date '+%Y-%m-%d %H:%M')" # Slightly shorter subject
+    subject="🚨 VaultWarden Emergency Access Kit - $(date '"'"'+%Y-%m-%d %H:%M'"'"')" # Slightly shorter subject
 
     # Check if notification library was sourced successfully
     if [[ "$NOTIFICATIONS_AVAILABLE" != "true" ]]; then
          log_error "Notification library not available. Cannot send kit via email."
          log_warn "The encrypted kit is saved locally at: $kit_file_path"
-         log_warn "You MUST manually copy this file to a secure offline location and delete the local copy using 'shred -u $kit_file_path'."
+         log_warn "You MUST manually copy this file to a secure offline location and delete the local copy using '"'"'shred -u $kit_file_path'"'"'."
          return 1 # Indicate failure to email
     fi
      # Check if required function exists
       if ! declare -f send_notification_with_attachment > /dev/null; then
-          log_error "'send_notification_with_attachment' function not found in sourced library."
+          log_error "'"'"'send_notification_with_attachment'"'"' function not found in sourced library."
           log_warn "The encrypted kit is saved locally at: $kit_file_path"
           log_warn "Manually secure this file offline and delete the local copy."
           return 1
       fi
-
 
     log_info "Preparing to send emergency kit via email..."
 
@@ -775,7 +770,7 @@ send_emergency_kit_email() {
     email_body=$(cat <<-EOF
 	VaultWarden-OCI-NG Emergency Access Kit
 
-	Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+	Generated: $(date -u '"'"'+%Y-%m-%d %H:%M:%S UTC'"'"')
 	Source Server: $(hostname -f 2>/dev/null || hostname)
 	Attached Kit: $kit_filename ($kit_size)
 
@@ -787,18 +782,18 @@ send_emergency_kit_email() {
 	**TREAT THIS EMAIL AND ATTACHMENT WITH EXTREME CARE.**
 
 	**Password Required:**
-	You need the password set during kit creation to decrypt the attached \`.age\` file.
+	You need the password set during kit creation to decrypt the attached \\`.age\\` file.
 	${password_info}
 
 	**Security Recommendations:**
-	1.  **Download** the attached \`$kit_filename\` immediately.
+	1.  **Download** the attached \\`$kit_filename\\` immediately.
 	2.  **Verify** the download is complete and the file size matches ($kit_size).
 	3.  **Store** the file in multiple, secure, **OFFLINE** locations (e.g., encrypted USB drive, password manager secure note).
 	4.  **Delete** this email permanently after confirming offline storage.
 	5.  **Document** the storage location and password securely (e.g., in a separate password manager entry).
 
 	**Recovery:**
-	Follow instructions in \`recovery-guide.md\` inside the decrypted kit archive.
+	Follow instructions in \\`recovery-guide.md\\` inside the decrypted kit archive.
 
 	---
 	Generated by VaultWarden-OCI-NG Emergency Access Kit system
@@ -806,14 +801,14 @@ send_emergency_kit_email() {
     )
 
     if [[ "$TEST_MODE" == "true" ]]; then
-        log_warn "[TEST MODE] Email would be sent with kit attachment '$kit_filename'."
+        log_warn "[TEST MODE] Email would be sent with kit attachment '"'"'$kit_filename'"'"'."
         log_info "Kit file remains locally at: $kit_file_path"
         return 0 # Success for test mode
     fi
 
     # Attempt to send using the notification library function
     log_info "Attempting to send kit to admin email (defined in config)..."
-    # 'emergency' category typically implies high priority in notifications.sh
+    # '"'"'emergency'"'"' category typically implies high priority in notifications.sh
     if send_notification_with_attachment "emergency" "$subject" "$email_body" "$kit_file_path"; then
         log_success "Emergency access kit email sent successfully."
         # Securely delete the local copy *after* successful email sending
@@ -828,7 +823,7 @@ send_emergency_kit_email() {
     else
         log_error "Failed to send emergency access kit via email. Check notification logs."
         log_warn "The encrypted kit is saved locally at: $kit_file_path"
-        log_warn "You MUST manually copy this file to a secure offline location and delete the local copy using 'shred -u $kit_file_path'."
+        log_warn "You MUST manually copy this file to a secure offline location and delete the local copy using '"'"'shred -u $kit_file_path'"'"'."
         return 1 # Indicate failure
     fi
 }
@@ -838,7 +833,6 @@ main() {
     log_header "VaultWarden Emergency Access Kit Creation"
     parse_arguments "$@"
     _log_debug "Arguments parsed. AutoPW=$AUTO_PASSWORD, TestMode=$TEST_MODE, OutputFile=$OUTPUT_FILE"
-
 
     # Validate prerequisites first
     validate_prerequisites || { log_error "Prerequisites not met. Aborting."; exit 1; }
@@ -894,7 +888,5 @@ main() {
 # --- Script Entry Point ---
 # Run main if script is executed directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    # Optional: Add ERR trap for better debugging
-    # trap 'log_error "Unhandled error occurred at line $LINENO in $(basename ${BASH_SOURCE[0]})"; exit 1' ERR
     main "$@"
 fi

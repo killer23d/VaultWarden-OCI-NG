@@ -29,13 +29,20 @@ source "lib/security.sh" # Provides fetch_cloudflare_ips
 # Set script-specific log prefix
 _set_log_prefix "$(basename "$0" .sh)"
 
-# --- Rest of script follows ---
-
+# P1 & P2 FIX: Add standardized error handling
+trap 'log_error "Script failed at line $LINENO in $(basename "${BASH_SOURCE[0]}")"; exit 1' ERR
 
 # --- Configuration ---
 # Use constants from constants.sh if available, otherwise define here
 # (constants.sh should be sourced by security.sh)
 readonly CADDY_IP_FILE="${CADDY_IP_FILE:-caddy/cloudflare-ips.caddy}" # Define CADDY_IP_FILE if not in constants
+
+# --- Progress tracking for P2 ---
+show_progress() {
+    local step=$1 total=$2 description="$3"
+    echo "[$step/$total] $description..."
+    [[ -n "${4:-}" ]] && echo "Progress: $(( step * 100 / total ))%"
+}
 
 # --- Help text ---
 show_help() {
@@ -80,11 +87,14 @@ done
 # --- Functions ---
 
 validate_current_file() {
-    log_info "Validating current Caddy IP file: $CADDY_IP_FILE"
+    show_progress 1 3 "Validating current Caddy IP file: $CADDY_IP_FILE"
+
     if [[ ! -f "$CADDY_IP_FILE" ]]; then
         log_warn "Caddy IP file does not exist: $CADDY_IP_FILE"
         return 1
     fi
+
+    show_progress 2 3 "Checking file structure and content"
 
     # Check for core structure: @cloudflare block and remote_ip directive
     if ! grep -q "@cloudflare {" "$CADDY_IP_FILE" || ! grep -q "remote_ip" "$CADDY_IP_FILE"; then
@@ -95,6 +105,8 @@ validate_current_file() {
     # Count IP/CIDR entries (simple count of space-separated items after remote_ip)
     local ip_count
     ip_count=$(grep "remote_ip" "$CADDY_IP_FILE" | head -n 1 | awk '{print NF-1}') # NF-1 gives count after 'remote_ip'
+
+    show_progress 3 3 "Verifying IP count ($ip_count entries found)"
 
     if [[ "$ip_count" -lt 10 ]]; then # Expect at least a few IPs/ranges
         log_warn "Found only $ip_count IP/range entries in current file. Seems low."
@@ -111,12 +123,15 @@ update_caddy_ip_file() {
     # Ensure temp file is removed on exit/error
     trap 'rm -f "$temp_file"' RETURN
 
+    show_progress 1 4 "Fetching latest Cloudflare IP ranges"
+
     # P2 FIX: Use centralized fetch function from existing lib/security.sh
-    log_info "Fetching latest Cloudflare IP ranges..."
     if ! fetch_cloudflare_ips "$temp_file"; then
         log_error "Failed to fetch Cloudflare IP ranges. Caddy file not updated."
         return 1
     fi
+
+    show_progress 2 4 "Validating fetched IP data"
 
     # Check if fetched file has content
     if [[ ! -s "$temp_file" ]]; then
@@ -124,8 +139,9 @@ update_caddy_ip_file() {
          return 1
     fi
 
+    show_progress 3 4 "Generating Caddy trusted proxy configuration"
+
     # Generate Caddy configuration format
-    log_info "Generating Caddy trusted proxy configuration..."
     local temp_caddy_file="${CADDY_IP_FILE}.tmp.$$"
     # Ensure temp caddy file is removed on exit/error if move fails
     trap 'rm -f "$temp_file" "$temp_caddy_file"' RETURN
@@ -147,6 +163,8 @@ update_caddy_ip_file() {
          log_error "Generated Caddy file $temp_caddy_file seems invalid. Aborting update."
          return 1
     fi
+
+    show_progress 4 4 "Installing updated configuration file"
 
     # Replace the old file with the new one atomically
     if mv "$temp_caddy_file" "$CADDY_IP_FILE"; then

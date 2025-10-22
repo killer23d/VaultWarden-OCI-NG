@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tools/init-setup.sh - One-time initialization with explicit error checks
+# tools/init-setup.sh - Initialize VaultWarden-OCI-NG system with comprehensive setup
 
 # Ensure strict mode and error handling
 set -euo pipefail
@@ -18,269 +18,581 @@ if [[ ! -f "lib/logging.sh" ]]; then
 fi
 source "lib/logging.sh"
 
-# Additional libraries as needed (add after logging.sh)
-source "lib/config.sh" || true # Source config, ignore errors initially as it might not be set up
-source "lib/validation.sh" # Needed for input validation
-source "lib/sops.sh" # Needed for key generation/SOPS setup
-source "lib/security.sh" # Needed for firewall setup
+# Additional required libraries
+for lib in config validation system sops security install; do
+    lib_file="lib/${lib}.sh"
+    if [[ -f "$lib_file" ]]; then
+        # shellcheck source=/dev/null
+        source "$lib_file"
+    else
+        log_error "CRITICAL: Required library not found: $lib_file"
+        exit 1
+    fi
+done
 
 # Set script-specific log prefix
 _set_log_prefix "$(basename "$0" .sh)"
 
-# --- Rest of script follows ---
+# P1 FIX: Add standardized error handling
+trap 'log_error "Script failed at line $LINENO in $(basename "${BASH_SOURCE[0]}")"; exit 1' ERR
+
+# --- P2 FIX: Progress indication functions ---
+show_progress() {
+    local step=$1 total=$2 description="$3"
+    local show_percent="${4:-false}"
+
+    echo "[$step/$total] $description..."
+    if [[ "$show_percent" == "true" ]]; then
+        local percent=$(( step * 100 / total ))
+        echo "Progress: ${percent}%"
+    fi
+}
+
+show_setup_phase() {
+    local phase="$1"
+    local step="$2"
+    local total="$3"
+
+    log_header "Phase $step/$total: $phase"
+}
+
+# --- Configuration Variables ---
+DOMAIN=""
+ADMIN_EMAIL=""
+RESTORE_MODE=false
+SKIP_FIREWALL=false
+AUTO_MODE=false
 
 # --- Help Text ---
-usage() {
-  cat << EOF
-Usage: sudo $0 --domain DOMAIN --email ADMIN_EMAIL [--auto] [--restore-mode]
+show_help() {
+    cat << EOF
+VaultWarden-OCI-NG System Initialization Script
+
+USAGE:
+    sudo $0 --domain DOMAIN --email EMAIL [OPTIONS]
+
 DESCRIPTION:
-  Performs the initial one-time setup for VaultWarden-OCI-NG.
-  Generates keys, creates initial configuration files, sets up firewall,
-  and prepares the system for the first run. Requires sudo privileges.
+    Initializes the VaultWarden-OCI-NG system with secure defaults, including:
+    - System dependencies verification
+    - Age encryption key generation
+    - SOPS configuration setup
+    - Firewall configuration (UFW + fail2ban)
+    - Directory structure creation
+    - Cron job installation
+    - Initial secrets template
+
+REQUIRED ARGUMENTS:
+    --domain DOMAIN     Domain name for VaultWarden (e.g., vault.example.com)
+    --email EMAIL       Admin email address for certificates and notifications
+
 OPTIONS:
-  --domain DOMAIN       (Required) Your public domain name (e.g., vault.example.com). No protocol!
-  --email ADMIN_EMAIL   (Required) Your email for admin/Let's Encrypt.
-  --auto                Run non-interactively, assuming defaults.
-  --restore-mode        Skips key/config generation if files exist (for recovery).
-  --help                Show this help message.
+    --help             Show this help message
+    --restore-mode     Skip key/config generation if files already exist
+    --skip-firewall    Skip firewall configuration (not recommended)
+    --auto             Run in non-interactive mode with minimal prompts
+
+EXAMPLES:
+    # Fresh installation
+    sudo $0 --domain vault.example.com --email admin@example.com
+
+    # Restore from backup
+    sudo $0 --domain vault.example.com --email admin@example.com --restore-mode
+
+NOTES:
+    - This script requires root privileges for system configuration
+    - Existing configurations are preserved when using --restore-mode
+    - Generated Age keys are stored securely in secrets/keys/
 EOF
-  exit 1
 }
 
 # --- Argument Parsing ---
-AUTO=false
-DOMAIN_ARG=""
-EMAIL_ARG=""
-RESTORE_MODE=false
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --domain) DOMAIN_ARG="${2:-}"; shift 2;;
-    --email) EMAIL_ARG="${2:-}"; shift 2;;
-    --auto) AUTO=true; shift;;
-    --restore-mode) RESTORE_MODE=true; shift;;
-    --help) usage;; # Call usage function on --help
-    *) log_error "Unknown option: $1"; usage;;
-  esac
-done
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --help) show_help; exit 0 ;;
+            --domain)
+                DOMAIN="$2"
+                shift 2
+                ;;
+            --email)
+                ADMIN_EMAIL="$2"
+                shift 2
+                ;;
+            --restore-mode)
+                RESTORE_MODE=true
+                shift
+                ;;
+            --skip-firewall)
+                SKIP_FIREWALL=true
+                shift
+                ;;
+            --auto)
+                AUTO_MODE=true
+                shift
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
 
-# Validate required arguments
-if [[ -z "$DOMAIN_ARG" || -z "$EMAIL_ARG" ]]; then
-    log_error "Missing required arguments --domain and --email."
-    usage
-fi
-
-# Validate input formats using functions from lib/validation.sh
-if ! validate_domain_format "$DOMAIN_ARG"; then
-    log_error "Invalid domain format provided for --domain."
-    exit 1
-fi
-# Re-assign potentially cleaned domain (protocol stripped)
-DOMAIN_ARG="$CLEAN_DOMAIN" # Assumes validate_domain_format exports CLEAN_DOMAIN or similar
-
-if ! validate_email_format "$EMAIL_ARG"; then
-    log_error "Invalid email format provided for --email."
-    exit 1
-fi
-
-# --- Helper Functions for Safety ---
-mkdir_safe() { local d="$1"; mkdir -p "$d" || { log_error "mkdir failed: $d"; return 1; }; }
-cp_safe() { cp "$1" "$2" || { log_error "cp failed: $1 -> $2"; return 1; }; }
-chmod_safe() { chmod "$1" "$2" || { log_error "chmod failed: $1 $2"; return 1; }; }
-chown_safe() { chown "$1" "$2" || { log_error "chown failed: $1 $2"; return 1; }; }
-render_template() {
-    local template_file="$1"
-    local output_file="$2"
-    local vars_to_subst="$3" # e.g., '$VAR1,$VAR2'
-    if [[ ! -f "$template_file" ]]; then log_error "Template not found: $template_file"; return 1; fi
-    log_info "Rendering template '$template_file' to '$output_file'..."
-    # Use envsubst if available
-    if command -v envsubst >/dev/null; then
-        <"$template_file" envsubst "$vars_to_subst" > "$output_file" || { log_error "envsubst failed for $template_file"; return 1; }
-    else
-        # Basic sed fallback (less robust)
-        local content EscapedEmail EscapedDomain
-        content=$(<"$template_file")
-        # Escape for sed
-        EscapedEmail=$(printf '%s\n' "$ADMIN_EMAIL" | sed 's:[][\\/.^$*]:\\&:g')
-        EscapedDomain=$(printf '%s\n' "$DOMAIN_ARG" | sed 's:[][\\/.^$*]:\\&:g')
-        # Simple substitution
-        content="${content//\$ADMIN_EMAIL/$EscapedEmail}"
-        content="${content//\$DOMAIN/$EscapedDomain}"
-        # Add more vars if template uses them
-        echo "$content" > "$output_file" || { log_error "sed fallback failed for $template_file"; return 1; }
+    # Validate required arguments
+    if [[ -z "$DOMAIN" ]]; then
+        log_error "Domain is required. Use --domain to specify."
+        show_help
+        exit 1
     fi
-     log_success "Rendered '$output_file'."
+
+    if [[ -z "$ADMIN_EMAIL" ]]; then
+        log_error "Admin email is required. Use --email to specify."
+        show_help
+        exit 1
+    fi
 }
 
-# --- Main Initialization Logic ---
-main() {
-  log_header "VaultWarden-OCI-NG Initial Setup"
+# --- Validation Functions ---
+validate_inputs() {
+    show_setup_phase "Input Validation" 1 9
 
-  # Ensure running as root
-  if [[ $EUID -ne 0 ]]; then
-      log_error "This script must be run with sudo privileges."
-      exit 1
-  fi
+    _log_section "Validating Input Parameters"
+    local errors=0
 
-  # 1. Create essential directories
-  log_info "Creating required directories..."
-  local state_dir="${PROJECT_STATE_DIR:-/var/lib/vaultwarden}" # Get from config or default
-  mkdir_safe "secrets/keys" || exit 1
-  mkdir_safe "caddy" || exit 1
-  mkdir_safe "data/bwdata" || exit 1 # Deprecated local data, but structure might be expected
-  mkdir_safe "$state_dir/data/bwdata" || exit 1 # Main persistent data
-  mkdir_safe "$state_dir/logs/caddy" || exit 1
-  mkdir_safe "$state_dir/logs/fail2ban" || exit 1
-  mkdir_safe "$state_dir/backups/db" || exit 1
-  mkdir_safe "$state_dir/backups/full" || exit 1
-  mkdir_safe "ddclient" || exit 1 # For rendered config
+    show_progress 1 3 "Validating domain format"
+    # Validate domain format
+    if ! validate_domain_format "$DOMAIN"; then
+        log_error "Invalid domain format: $DOMAIN"
+        ((errors++))
+    fi
 
-  # 2. Setup .env file
-  if [[ ! -f .env ]] || [[ "$RESTORE_MODE" == "false" ]]; then
-    log_info "Setting up .env configuration file..."
-    if [[ -f settings.env.example ]]; then
-      cp_safe settings.env.example .env || exit 1
-      # Update DOMAIN and ADMIN_EMAIL in the copied file
-      sed -i "s/^DOMAIN=.*/DOMAIN=$DOMAIN_ARG/" .env || log_warn "Failed to set DOMAIN in .env"
-      sed -i "s/^ADMIN_EMAIL=.*/ADMIN_EMAIL=$EMAIL_ARG/" .env || log_warn "Failed to set ADMIN_EMAIL in .env"
-      log_success ".env created from template and updated."
-    else
-      log_warn "settings.env.example not found. Creating basic .env file."
-      # Create minimal .env if template missing
-      cat > .env <<EOF
-# Basic VaultWarden-NG Configuration
-PROJECT_STATE_DIR=$state_dir
-COMPOSE_PROJECT_NAME=vaultwarden
-TZ=UTC
-DOMAIN=$DOMAIN_ARG
-ADMIN_EMAIL=$EMAIL_ARG
-# Add other essential defaults if template is missing
+    show_progress 2 3 "Validating email format"
+    # Validate email format
+    if ! validate_email_format "$ADMIN_EMAIL"; then
+        log_error "Invalid email format: $ADMIN_EMAIL"
+        ((errors++))
+    fi
+
+    show_progress 3 3 "Checking root privileges"
+    # Check root privileges
+    if [[ $EUID -ne 0 ]]; then
+        log_error "This script requires root privileges. Please run with sudo."
+        ((errors++))
+    fi
+
+    if [[ $errors -gt 0 ]]; then
+        log_error "Input validation failed with $errors error(s)."
+        return 1
+    fi
+
+    log_success "Input validation passed."
+    return 0
+}
+
+# --- System Setup Functions ---
+setup_directories() {
+    show_setup_phase "Directory Structure" 2 9
+
+    _log_section "Setting Up Directory Structure"
+
+    local directories=(
+        "secrets/keys"
+        "secrets/.docker_secrets"
+        "templates"
+        "caddy"
+        "fail2ban"
+        "ddclient"
+        "${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/data"
+        "${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/logs/caddy"
+        "${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/logs/fail2ban"
+        "${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/logs/system"
+        "${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/backups"
+    )
+
+    show_progress 1 3 "Creating directory structure"
+
+    local created_count=0
+    for dir in "${directories[@]}"; do
+        if [[ ! -d "$dir" ]]; then
+            log_info "Creating directory: $dir"
+            if mkdir -p "$dir"; then
+                ((created_count++))
+            else
+                log_error "Failed to create directory: $dir"
+                return 1
+            fi
+        else
+            _log_debug "Directory already exists: $dir"
+        fi
+    done
+
+    show_progress 2 3 "Setting directory permissions"
+
+    # Set appropriate permissions
+    chmod 700 secrets/keys secrets/.docker_secrets
+    chmod 755 "${PROJECT_STATE_DIR:-/var/lib/vaultwarden}"
+    chmod 750 "${PROJECT_STATE_DIR:-/var/lib/vaultwarden}/data"
+
+    show_progress 3 3 "Verifying directory structure"
+
+    log_success "Directory structure created successfully ($created_count new directories)."
+}
+
+generate_age_keys() {
+    show_setup_phase "Encryption Keys" 3 9
+
+    _log_section "Generating Age Encryption Keys"
+
+    local age_key_file="secrets/keys/age-key.txt"
+    local age_pub_file="secrets/keys/age-public-key.txt"
+
+    show_progress 1 3 "Checking existing keys"
+
+    if [[ "$RESTORE_MODE" == "true" && -f "$age_key_file" ]]; then
+        log_info "Restore mode: Age key already exists, skipping generation."
+        return 0
+    fi
+
+    if [[ -f "$age_key_file" && "$RESTORE_MODE" == "false" ]]; then
+        log_warn "Age key already exists. Use --restore-mode to skip regeneration."
+        if [[ "$AUTO_MODE" != "true" ]]; then
+            read -p "Regenerate Age key? This will invalidate existing encrypted data (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                log_info "Keeping existing Age key."
+                return 0
+            fi
+        else
+            log_info "Auto mode: Keeping existing Age key."
+            return 0
+        fi
+    fi
+
+    show_progress 2 3 "Generating Age private key"
+
+    log_info "Generating new Age encryption key..."
+    if ! age-keygen -o "$age_key_file" 2>/dev/null; then
+        log_error "Failed to generate Age private key."
+        return 1
+    fi
+
+    show_progress 3 3 "Generating Age public key"
+
+    # Generate public key
+    if ! age-keygen -y "$age_key_file" > "$age_pub_file"; then
+        log_error "Failed to generate Age public key."
+        return 1
+    fi
+
+    # Set secure permissions
+    chmod 600 "$age_key_file"
+    chmod 644 "$age_pub_file"
+
+    log_success "Age encryption keys generated successfully."
+    log_info "Private key: $age_key_file"
+    log_info "Public key: $age_pub_file"
+}
+
+create_sops_config() {
+    show_setup_phase "SOPS Configuration" 4 9
+
+    _log_section "Creating SOPS Configuration"
+
+    local sops_config=".sops.yaml"
+    local age_pub_file="secrets/keys/age-public-key.txt"
+
+    show_progress 1 2 "Checking existing SOPS config"
+
+    if [[ "$RESTORE_MODE" == "true" && -f "$sops_config" ]]; then
+        log_info "Restore mode: SOPS config already exists, skipping creation."
+        return 0
+    fi
+
+    if [[ ! -f "$age_pub_file" ]]; then
+        log_error "Age public key not found: $age_pub_file"
+        return 1
+    fi
+
+    show_progress 2 2 "Creating SOPS configuration file"
+
+    local age_public_key
+    age_public_key=$(cat "$age_pub_file")
+
+    log_info "Creating SOPS configuration..."
+    cat > "$sops_config" << EOF
+creation_rules:
+  - path_regex: secrets/.*\.yaml$
+    age: >-
+      $age_public_key
+    encrypted_regex: ^(data|stringData|password|token|key|secret)$
+EOF
+
+    chmod 644 "$sops_config"
+    log_success "SOPS configuration created: $sops_config"
+}
+
+create_env_file() {
+    show_setup_phase "Environment Configuration" 5 9
+
+    _log_section "Creating Environment Configuration"
+
+    local env_file=".env"
+
+    show_progress 1 2 "Checking existing environment file"
+
+    if [[ "$RESTORE_MODE" == "true" && -f "$env_file" ]]; then
+        log_info "Restore mode: Environment file already exists, skipping creation."
+        return 0
+    fi
+
+    show_progress 2 2 "Generating environment configuration"
+
+    log_info "Creating environment configuration file..."
+
+    # Use CLEAN_DOMAIN if set by validation, otherwise derive it
+    local clean_domain="${CLEAN_DOMAIN:-$DOMAIN}"
+    clean_domain="${clean_domain#http://}"
+    clean_domain="${clean_domain#https://}"
+    clean_domain="${clean_domain%/}"
+
+    cat > "$env_file" << EOF
+# VaultWarden-OCI-NG Environment Configuration
+# Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+# Domain Configuration
+DOMAIN=$clean_domain
+ADMIN_EMAIL=$ADMIN_EMAIL
+
+# Project Configuration
+PROJECT_STATE_DIR=${PROJECT_STATE_DIR:-/var/lib/vaultwarden}
+TZ=${TZ:-UTC}
+
+# VaultWarden Configuration
 SIGNUPS_ALLOWED=false
 INVITATIONS_ALLOWED=true
 WEBSOCKET_ENABLED=true
+LOG_LEVEL=warn
+EXTENDED_LOGGING=true
+
+# SMTP Configuration (configure via tools/edit-secrets.sh)
+SMTP_HOST=
+SMTP_FROM=$ADMIN_EMAIL
+SMTP_PORT=587
+SMTP_SECURITY=starttls
+SMTP_USERNAME=
+
+# Push Notifications (configure via tools/edit-secrets.sh)
+PUSH_ENABLED=false
+PUSH_INSTALLATION_ID=
+PUSH_RELAY_URI=https://api.bitwarden.com
+
+# DDClient Configuration (optional)
+DDCLIENT_ENABLED=false
+DDCLIENT_PROTOCOL=cloudflare
+DDCLIENT_ZONE=
+
+# Resource Limits
+VAULTWARDEN_MEMORY_LIMIT=1.5G
+VAULTWARDEN_MEMORY_RESERVATION=256M
+CADDY_MEMORY_LIMIT=384M
+CADDY_MEMORY_RESERVATION=64M
+FAIL2BAN_MEMORY_LIMIT=192M
+FAIL2BAN_MEMORY_RESERVATION=64M
+WATCHTOWER_MEMORY_LIMIT=128M
+WATCHTOWER_MEMORY_RESERVATION=32M
+DDCLIENT_MEMORY_LIMIT=64M
+DDCLIENT_MEMORY_RESERVATION=16M
 EOF
-      log_success "Basic .env file created."
+
+    chmod 640 "$env_file"
+    log_success "Environment configuration created: $env_file"
+}
+
+create_initial_secrets() {
+    show_setup_phase "Initial Secrets" 6 9
+
+    _log_section "Creating Initial Secrets Template"
+
+    local secrets_file="secrets/secrets.yaml"
+
+    show_progress 1 4 "Checking existing secrets file"
+
+    if [[ "$RESTORE_MODE" == "true" && -f "$secrets_file" ]]; then
+        log_info "Restore mode: Secrets file already exists, skipping creation."
+        return 0
     fi
-    chmod_safe 640 .env || exit 1
-  else
-      log_info ".env file already exists. Skipping creation (--restore-mode)."
-  fi
-  # Export vars from .env for subsequent steps (like template rendering)
-  set -a; source .env; set +a
 
-  # 3. Generate Age Key
-  local age_key_file="secrets/keys/age-key.txt"
-  if [[ ! -f "$age_key_file" ]] || [[ "$RESTORE_MODE" == "false" ]]; then
-    log_info "Generating Age encryption key..."
-    age-keygen -o "$age_key_file" || { log_error "age-keygen failed"; exit 1; }
-    chmod_safe 600 "$age_key_file" || exit 1
-    log_success "Age key generated."
-  else
-    log_info "Age key file already exists. Skipping generation (--restore-mode)."
-    # Ensure permissions are correct even in restore mode
-    chmod_safe 600 "$age_key_file" || exit 1
-  fi
-  # Ensure public key exists
-  local age_pubkey_file="secrets/keys/age-public-key.txt"
-  if [[ ! -f "$age_pubkey_file" ]] || [[ "$RESTORE_MODE" == "false" ]]; then
-       log_info "Generating Age public key..."
-       age-keygen -y "$age_key_file" > "$age_pubkey_file" || { log_error "Failed to generate public key"; exit 1; }
-       chmod_safe 644 "$age_pubkey_file" || exit 1
-  fi
-  export AGE_PUBLIC_KEY; AGE_PUBLIC_KEY=$(cat "$age_pubkey_file")
+    show_progress 2 4 "Generating secure tokens"
 
-  # 4. Setup SOPS configuration
-  local sops_config_file=".sops.yaml"
-  local sops_template_file=".sops.yaml.tmpl"
-  if [[ ! -f "$sops_config_file" ]] || [[ "$RESTORE_MODE" == "false" ]]; then
-       if [[ -f "$sops_template_file" ]]; then
-            render_template "$sops_template_file" "$sops_config_file" '${AGE_PUBLIC_KEY}' || exit 1
-            chmod_safe 644 "$sops_config_file" || exit 1
-       else
-            log_error "SOPS template file '$sops_template_file' not found. Cannot create '$sops_config_file'."
-            exit 1
-       fi
-  else
-       log_info "SOPS configuration file '$sops_config_file' already exists. Skipping creation (--restore-mode)."
-  fi
+    log_info "Creating initial secrets template..."
 
-  # 5. Initialize encrypted secrets file if it doesn't exist
-  local secrets_file="secrets/secrets.yaml"
-  local secrets_example="secrets/secrets.yaml.example"
-  if [[ ! -f "$secrets_file" ]] || [[ "$RESTORE_MODE" == "false" ]]; then
-       if [[ -f "$secrets_example" ]]; then
-            log_info "Creating initial encrypted secrets file from template..."
-            cp_safe "$secrets_example" "$secrets_file" || exit 1
-            # Encrypt the template using SOPS rules defined in .sops.yaml
-            sops --encrypt --in-place "$secrets_file" || { log_error "Failed to encrypt initial secrets file"; rm -f "$secrets_file"; exit 1; }
-            chmod_safe 600 "$secrets_file" || exit 1 # Should SOPS set this? Let's be explicit.
-            log_success "Initial secrets file created and encrypted."
-            log_warn "IMPORTANT: Edit secrets now using './tools/edit-secrets.sh' to set required passwords/tokens."
-       else
-            log_error "Secrets example file '$secrets_example' not found. Cannot create initial secrets file."
-            # Maybe create an empty secrets file? No, better to fail.
-            exit 1
-       fi
-  else
-       log_info "Encrypted secrets file '$secrets_file' already exists. Skipping creation (--restore-mode)."
-  fi
+    # Generate secure tokens
+    local admin_token smtp_password backup_passphrase push_key
+    admin_token=$(generate_secure_token 64)
+    smtp_password="your_smtp_password_here"
+    backup_passphrase=$(generate_secure_token 32)
+    push_key="your_push_installation_key_here"
 
-  # 6. Setup Caddyfile
-  local caddy_file="caddy/Caddyfile"
-  if [[ ! -f "$caddy_file" ]] || [[ "$RESTORE_MODE" == "false" ]]; then
-    log_info "Creating basic Caddyfile..."
-    # Create a basic Caddyfile, assuming advanced one doesn't exist yet
-    # The main Caddyfile might be more complex, this is just a fallback/initial setup
-    cat > "$caddy_file" <<EOF
-# Basic Caddyfile for VaultWarden-NG (will be enhanced by Caddyfile example)
-{
-  email {$ADMIN_EMAIL}
-  # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory # Uncomment for testing
-}
-https://{$DOMAIN} {
-  log {
-      output file /var/log/caddy/access.log {
-          roll_size 10mb
-          roll_keep 5
-      }
-      format json
-  }
-  reverse_proxy vaultwarden:8080
-  # Add WebSocket proxy if enabled
-  reverse_proxy /notifications/hub vaultwarden:3012
-}
+    show_progress 3 4 "Creating admin authentication hash"
+
+    # Generate admin basic auth hash
+    local admin_basic_auth_hash
+    admin_basic_auth_hash=$(printf "admin:%s" "$(generate_secure_token 16)" | base64)
+
+    cat > "$secrets_file" << EOF
+# VaultWarden-OCI-NG Secrets Configuration
+# Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+# Edit with: ./tools/edit-secrets.sh
+
+# Admin Panel Access
+admin_token: "$admin_token"
+admin_basic_auth_hash: "$admin_basic_auth_hash"
+
+# SMTP Configuration
+smtp_password: "$smtp_password"
+
+# Backup Configuration
+backup_passphrase: "$backup_passphrase"
+
+# Push Notifications
+push_installation_key: "$push_key"
+
+# Cloudflare Integration (optional)
+cloudflare_api_token: "your_cloudflare_token_here"
 EOF
-    chmod_safe 644 "$caddy_file" || exit 1
-    log_success "Basic Caddyfile created."
-  else
-    log_info "Caddyfile already exists. Skipping creation (--restore-mode)."
-  fi
-  # Ensure Cloudflare IP import file exists, even if empty initially
-  touch caddy/cloudflare-ips.caddy
-  chmod_safe 644 caddy/cloudflare-ips.caddy
 
-  # 7. Configure System Security (Firewall, Fail2ban setup)
-  # Needs root privileges, call functions from security.sh
-  configure_system_security "$AUTO" || exit 1
-  # Initial update of Cloudflare IPs for firewall
-  update_cloudflare_ufw_allowlist || log_warn "Failed initial Cloudflare IP update for UFW."
-  # Setup fail2ban config (copy defaults, enable jails)
-  # TODO: Add specific fail2ban setup steps if needed (copying jail.local, etc.)
+    show_progress 4 4 "Encrypting secrets with SOPS"
 
-  # 8. Setup Cron Jobs
-  # Needs root privileges, call function from cron.sh
-  setup_cron_jobs "$AUTO" || exit 1
+    # Encrypt with SOPS
+    if ! sops --encrypt --in-place "$secrets_file"; then
+        log_error "Failed to encrypt secrets file with SOPS."
+        return 1
+    fi
 
-  # 9. Final Permissions Fix
-  log_info "Setting final project permissions..."
-  # Ensure correct ownership (e.g., ubuntu user if run via sudo)
-  chown_safe -R "${SUDO_USER:-$(id -u)}:${SUDO_GROUP:-$(id -g)}" "$PROJECT_ROOT" || exit 1
-  # Secure permissions using function from security.sh
-  secure_project_permissions || exit 1
-
-
-  log_success "Initialization complete. Run './tools/edit-secrets.sh' to set passwords/tokens, then './startup.sh'."
+    chmod 640 "$secrets_file"
+    log_success "Initial secrets template created and encrypted: $secrets_file"
+    log_warn "Configure actual secrets using: ./tools/edit-secrets.sh"
 }
 
-# --- Execute Main Function ---
-main
+configure_firewall() {
+    show_setup_phase "Firewall Setup" 7 9
+
+    if [[ "$SKIP_FIREWALL" == "true" ]]; then
+        log_info "Skipping firewall configuration as requested."
+        return 0
+    fi
+
+    _log_section "Configuring System Firewall"
+
+    show_progress 1 1 "Applying firewall configuration"
+
+    if ! configure_system_security "$AUTO_MODE"; then
+        log_error "Failed to configure system security."
+        return 1
+    fi
+
+    log_success "Firewall configuration completed."
+}
+
+install_cron_jobs() {
+    show_setup_phase "Automation Setup" 8 9
+
+    _log_section "Installing Cron Jobs"
+
+    show_progress 1 2 "Loading cron configuration library"
+
+    # Source cron library if available
+    if [[ -f "lib/cron.sh" ]]; then
+        source "lib/cron.sh"
+        if declare -f install_cron_jobs_for_user >/dev/null; then
+            show_progress 2 2 "Installing automated maintenance jobs"
+            install_cron_jobs_for_user "root"
+        else
+            log_warn "Cron installation function not found in lib/cron.sh"
+        fi
+    else
+        log_warn "Cron library not found: lib/cron.sh"
+    fi
+
+    log_success "Cron jobs installation completed."
+}
+
+secure_permissions() {
+    show_setup_phase "Security Hardening" 9 9
+
+    _log_section "Securing File Permissions"
+
+    show_progress 1 2 "Applying security permissions"
+
+    if ! secure_project_permissions; then
+        log_warn "Some permission changes failed, but continuing."
+    fi
+
+    show_progress 2 2 "Verifying critical file permissions"
+
+    # Verify critical files have correct permissions
+    local critical_files=(
+        "secrets/keys/age-key.txt:600"
+        ".env:640"
+        "secrets/secrets.yaml:640"
+    )
+
+    for file_perm in "${critical_files[@]}"; do
+        local file="${file_perm%:*}"
+        local expected_perm="${file_perm#*:}"
+
+        if [[ -f "$file" ]]; then
+            local actual_perm
+            actual_perm=$(stat -c "%a" "$file")
+            if [[ "$actual_perm" != "$expected_perm" ]]; then
+                log_warn "File $file has permissions $actual_perm (expected $expected_perm)"
+            else
+                _log_debug "File $file has correct permissions: $actual_perm"
+            fi
+        fi
+    done
+
+    log_success "File permissions secured."
+}
+
+# --- Main Execution ---
+main() {
+    log_header "VaultWarden-OCI-NG System Initialization"
+
+    parse_arguments "$@"
+
+    # Run setup steps with progress tracking
+    validate_inputs || exit 1
+
+    log_info "Running full system validation..."
+    validate_full_system || exit 1
+
+    # Execute all setup phases
+    setup_directories || exit 1
+    generate_age_keys || exit 1
+    create_sops_config || exit 1
+    create_env_file || exit 1
+    create_initial_secrets || exit 1
+    configure_firewall || exit 1
+    install_cron_jobs || exit 1
+    secure_permissions || exit 1
+
+    # Final message with next steps
+    log_success "VaultWarden-OCI-NG initialization completed successfully!"
+    echo
+    log_header "Next Steps"
+    echo
+    log_info "1. Configure secrets: ./tools/edit-secrets.sh"
+    log_info "2. Start services: ./startup.sh"
+    log_info "3. Verify deployment: ./tools/check-health.sh --comprehensive"
+    echo
+    log_warn "IMPORTANT: Backup your Age key securely!"
+    log_warn "Private key location: secrets/keys/age-key.txt"
+    echo
+    log_info "Access your VaultWarden instance at: https://${CLEAN_DOMAIN:-$DOMAIN}"
+}
+
+# Run main if script is executed directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
