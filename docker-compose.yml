@@ -18,6 +18,9 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-vaultwarden}_vaultwarden
     user: "1000:1000"  # Run as non-root user
     restart: unless-stopped
+    # P1.1 FIX: Add security hardening
+    security_opt:
+      - no-new-privileges:true
     expose:
       - 8080 # Main API/UI
       - 3012 # WebSockets
@@ -43,7 +46,8 @@ services:
       - PUSH_RELAY_URI=${PUSH_RELAY_URI:-https://api.bitwarden.com}
       - LOG_FILE=/data/vaultwarden.log
       - LOG_LEVEL=${LOG_LEVEL:-warn}
-      - EXTENDED_LOGGING=${EXTENDED_LOGGING:-true}
+      # P1.2 FIX: Set secure logging default
+      - EXTENDED_LOGGING=${EXTENDED_LOGGING:-false}
       - TZ=${TZ:-UTC}
       - ADMIN_TOKEN_FILE=/run/secrets/admin_token
       - SMTP_PASSWORD_FILE=/run/secrets/smtp_password
@@ -81,6 +85,9 @@ services:
     container_name: ${CONTAINER_NAME_CADDY:-${COMPOSE_PROJECT_NAME}_caddy}
     user: "1000:1000"  # Run as non-root user
     restart: unless-stopped
+    # P1.1 FIX: Add security hardening
+    security_opt:
+      - no-new-privileges:true
     ports: ["80:80", "443:443", "443:443/udp"]
     environment:
       # Pass the BARE domain (e.g., vault.example.com) to Caddy
@@ -122,6 +129,7 @@ services:
       - NET_ADMIN
       - NET_RAW # Required capabilities for iptables
     # NOTE: fail2ban must run as root for iptables access - user directive omitted intentionally
+    # P1.1 NOTE: no-new-privileges intentionally omitted for fail2ban as it requires elevated privileges
     environment:
       - PUID=0
       - PGID=0
@@ -151,6 +159,9 @@ services:
   watchtower:
     image: containrrr/watchtower:1.6.0
     container_name: ${CONTAINER_NAME_WATCHTOWER:-${COMPOSE_PROJECT_NAME}_watchtower}
+    # P1.1 FIX: Add security hardening
+    security_opt:
+      - no-new-privileges:true
     # Keep stopped unless run via cron/timer
     # restart: unless-stopped # Remove this if using external runner
     # Command runs once, checks labeled containers, sends email, cleans up old images
@@ -191,6 +202,9 @@ services:
     image: lscr.io/linuxserver/ddclient:3.11.2
     container_name: ${CONTAINER_NAME_DDCLIENT:-${COMPOSE_PROJECT_NAME}_ddclient}
     restart: unless-stopped
+    # P1.1 FIX: Add security hardening
+    security_opt:
+      - no-new-privileges:true
     environment:
       - PUID=1000  # Run as non-root user
       - PGID=1000
