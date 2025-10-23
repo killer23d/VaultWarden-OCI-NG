@@ -44,8 +44,8 @@ if [[ -f "lib/constants.sh" ]]; then source "lib/constants.sh"; fi
 # Set script-specific log prefix
 _set_log_prefix "$(basename "$0" .sh)"
 
-# --- Rest of script follows ---
-
+# P3.9 FIX: Add standardized error handling
+trap 'log_error "Script failed at line $LINENO in $(basename "${BASH_SOURCE[0]}")"; exit 1' ERR
 
 # --- Configuration ---
 # Use constants if available, else defaults
@@ -70,7 +70,6 @@ render_template() {
           log_error "Template file not found: $TEMPLATE_FILE"
           return 1
       fi
-
 
     # Load all configuration from .env and SOPS secrets (should already be loaded if called by startup.sh)
     # Re-load here using load_config from config.sh (idempotent).
@@ -104,7 +103,8 @@ render_template() {
               simple_vars=$(grep -oP '\$[A-Za-z_][A-Za-z0-9_]*' <<< "$line" | sed 's/\$//')
               for svar in $simple_vars; do
                    # Avoid adding if already found via ${...}
-                   if ! printf '%s\n' "${required_vars[@]}" | grep -Fxq "$svar"; then
+                   if ! printf '%s
+' "${required_vars[@]}" | grep -Fxq "$svar"; then
                         required_vars+=("$svar")
                    fi
               done
@@ -113,15 +113,17 @@ render_template() {
 
      # Add specific essential vars manually if parsing misses some or they are conditionally required
      required_vars+=("DDCLIENT_PROTOCOL" "DDCLIENT_LOGIN" "DDCLIENT_ZONE" "DDCLIENT_HOST")
-     # Cloudflare requires CLOUDFLARE_API_TOKEN (used as password in template)
+     # P2.3 FIX: Cloudflare requires CLOUDFLARE_API_TOKEN (used as password in template)
      local ddclient_protocol
      ddclient_protocol=$(get_config_value "DDCLIENT_PROTOCOL" "") # Get from loaded config
       if [[ "$ddclient_protocol" == "cloudflare" ]]; then
+          # P2.3 FIX: Ensure proper variable name for Cloudflare API token
           required_vars+=("CLOUDFLARE_API_TOKEN") # Must be provided via secrets
+          log_info "Cloudflare protocol detected, requiring CLOUDFLARE_API_TOKEN for authentication"
       fi
       # Remove duplicates and sort
-      required_vars=($(printf "%s\n" "${required_vars[@]}" | sort -u))
-
+      required_vars=($(printf "%s
+" "${required_vars[@]}" | sort -u))
 
     _log_debug "Required variables identified for template: ${required_vars[*]}"
     local missing=0 var_value var_source
@@ -132,13 +134,17 @@ render_template() {
 
         if [[ -z "$var_value" ]]; then
             log_error "Missing required configuration variable for ddclient template: '$var'"
-            # Check if it exists in environment but is empty (less likely with get_config_value)
-            # if [[ -v "$var" ]]; then log_warn "(Variable '$var' is set but empty)"; fi
+            # P2.3 FIX: Provide specific guidance for Cloudflare token
+            if [[ "$var" == "CLOUDFLARE_API_TOKEN" ]]; then
+                log_error "Cloudflare API token is required for Cloudflare protocol."
+                log_info "Configure it using: ./tools/edit-secrets.sh"
+                log_info "Add 'cloudflare_api_token: your_token_here' to the secrets file"
+            fi
             ((missing++))
             var_source="MISSING"
         else
              # Check if value seems like a placeholder (optional check)
-             if [[ "$var_value" =~ ^CHANGE_ME|^PASTE_.*_HERE$|^\[auto-generated|^\[auto-bcrypt ]]; then
+             if [[ "$var_value" =~ ^CHANGE_ME|^PASTE_.*_HERE$|^your_.*_here$ ]]; then
                   log_warn "Variable '$var' appears to contain a placeholder value ('${var_value:0:20}...'). Ensure it's correctly set."
                   # Don't increment missing count, but warn
              fi
@@ -167,9 +173,9 @@ render_template() {
     # load_config should export them.
     local envsubst_vars
     # Create list like '${VAR1},${VAR2}'
-    envsubst_vars=$(printf '${%s},' "${required_vars[@]}" | sed 's/,$//') # Remove trailing comma
+    envsubst_vars=$(printf '${%s},' "${required_vars[@]}" | sed 's/,$//')  # Remove trailing comma
 
-    _log_debug("Running envsubst with variables: $envsubst_vars")
+    _log_debug "Running envsubst with variables: $envsubst_vars"
 
     # Perform substitution, handle potential errors
     local subst_output subst_rc=0
@@ -197,6 +203,18 @@ render_template() {
              log_warn "Failed to set permissions '$output_perms' on $OUTPUT_FILE."
         fi
         log_success "Successfully rendered ddclient configuration to $OUTPUT_FILE"
+
+        # P2.3 FIX: Verify that Cloudflare token was properly substituted
+        if [[ "$ddclient_protocol" == "cloudflare" ]]; then
+            if grep -q "your_cloudflare_token_here\|CLOUDFLARE_API_TOKEN" "$OUTPUT_FILE"; then
+                log_error "Cloudflare API token was not properly substituted in rendered config"
+                log_error "Check that CLOUDFLARE_API_TOKEN is properly exported by load_config"
+                return 1
+            else
+                log_success "Cloudflare API token successfully rendered in configuration"
+            fi
+        fi
+
         return 0
     else
         log_error "Failed to write rendered content to output file: $OUTPUT_FILE"
