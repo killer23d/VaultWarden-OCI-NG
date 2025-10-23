@@ -372,7 +372,8 @@ SIGNUPS_ALLOWED=false
 INVITATIONS_ALLOWED=true
 WEBSOCKET_ENABLED=true
 LOG_LEVEL=warn
-EXTENDED_LOGGING=true
+# P1.2 FIX: Set secure logging default to prevent secret exposure
+EXTENDED_LOGGING=false
 
 # SMTP Configuration (configure via tools/edit-secrets.sh)
 SMTP_HOST=
